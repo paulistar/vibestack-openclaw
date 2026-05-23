@@ -41,6 +41,12 @@ if [ -z "${ACCESS_TOKEN:-}" ]; then
   echo "[entrypoint] AVISO: ACCESS_TOKEN vazio — meta-ads MCP vai falhar auth. Verifique META_ACCESS_TOKEN no .env."
 fi
 
+# CLI exige 'act_' no AD_ACCOUNT_ID (ex: act_123456). Adiciona se faltar.
+case "${AD_ACCOUNT_ID:-}" in
+  ""|act_*) ;;
+  *) AD_ACCOUNT_ID="act_${AD_ACCOUNT_ID}" ;;
+esac
+
 register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/meta_ads_cli_mcp.py\"],\"env\":{\"ACCESS_TOKEN\":\"${ACCESS_TOKEN:-}\",\"AD_ACCOUNT_ID\":\"${AD_ACCOUNT_ID:-}\",\"BUSINESS_ID\":\"${BUSINESS_ID:-}\"}}"
 
 # Acrescente novos MCP servers aqui no mesmo padrao:
