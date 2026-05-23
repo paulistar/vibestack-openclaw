@@ -28,18 +28,22 @@ CLI = "meta"
 
 
 def _run(*args: str, output_format: str = "json") -> Any:
-    """Executa `meta ads <args>`. Formato de saída configurável.
+    """Executa `meta [--output <fmt>] ads <args>`. Formato de saída configurável.
+
+    --output é flag GLOBAL do meta (vem antes de 'ads'), não do subcomando.
+    Formatos suportados pela CLI: table | json | plain.
 
     output_format:
       - 'json' (default): adiciona --output json e parseia o stdout.
         Em falha de parse, devolve dict com 'raw', 'parse_error' e 'hint'.
-      - 'table' | 'csv' | 'yaml' | 'text' | ...: passa direto pra CLI e devolve
-        o stdout cru (string), sem parsing. Use quando o JSON estiver quebrado.
-      - 'none' ou '': omite --output (usa default da CLI).
+      - 'table' | 'plain': passa direto pra CLI e devolve o stdout cru
+        (string), sem parsing. Use quando o JSON estiver quebrado.
+      - 'none' ou '': omite --output (default da CLI = table).
     """
-    cmd = [CLI, "ads", *args]
+    cmd = [CLI]
     if output_format and output_format != "none":
         cmd += ["--output", output_format]
+    cmd += ["ads", *args]
     r = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if r.returncode != 0:
         return {
