@@ -1195,5 +1195,116 @@ def delete_custom_audience(audience_id: str) -> Any:
     return _graph("DELETE", f"/{audience_id}")
 
 
+# ============================================================
+# Duplicacao de entidades (Graph API direta — CLI nao suporta)
+# ============================================================
+# A `meta` CLI nao tem subcomando 'duplicate' em nenhuma entidade.
+# Graph API expoe POST /{id}/copies pra campaign, ad set e ad.
+# Default deep_copy=True (duplica filhos) e status_option=PAUSED (seguro).
+
+
+def _duplicate(
+    entity_id: str,
+    new_name: str | None,
+    rename_suffix: str | None,
+    status_option: str,
+    deep_copy: bool,
+    extra_params: dict[str, str] | None,
+    cli_subgroup: str,
+    id_key: str,
+) -> Any:
+    """Backbone das tools duplicate_*. POST /{id}/copies + rename opcional via CLI."""
+    params: dict[str, str] = {
+        "deep_copy": "true" if deep_copy else "false",
+        "status_option": status_option,
+    }
+    if rename_suffix:
+        params["rename_options"] = json.dumps({"rename_suffix": rename_suffix})
+    if extra_params:
+        params.update(extra_params)
+
+    result = _graph("POST", f"/{entity_id}/copies", params=params)
+    if isinstance(result, dict) and "error" in result:
+        return result
+
+    new_id = result.get(id_key) if isinstance(result, dict) else None
+    if new_name and new_id:
+        rename = _run(cli_subgroup, "update", str(new_id), "--name", new_name)
+        result["renamed_to"] = new_name
+        result["rename_result"] = rename
+    return result
+
+
+@mcp.tool()
+def duplicate_ad_set(
+    ad_set_id: str,
+    new_name: str | None = None,
+    rename_suffix: str | None = None,
+    status_option: str = "PAUSED",
+    deep_copy: bool = True,
+    campaign_id: str | None = None,
+) -> Any:
+    """Duplica um ad set via Graph API (a CLI nao tem 'duplicate').
+
+    deep_copy=True (default): duplica tambem os ads filhos do ad set.
+    status_option: PAUSED (default — seguro) | ACTIVE | INHERITED_FROM_SOURCE.
+    new_name: nome exato pro novo ad set. Se informado, duplica e renomeia
+              (extra round-trip via 'meta ads adset update --name').
+    rename_suffix: alternativa — Meta acrescenta esse sufixo ao nome original
+                   numa unica chamada (mais barato, menos controle).
+    campaign_id: move o novo ad set pra outra campanha. Default = mesma.
+
+    Pra variacao de targeting pos-duplicacao, chame update_ad_set no ID retornado.
+    Retorna {"copied_adset_id": "...", "ad_object_ids": [...]}.
+    """
+    extra = {"campaign_id": campaign_id} if campaign_id else None
+    return _duplicate(
+        ad_set_id, new_name, rename_suffix, status_option, deep_copy,
+        extra, "adset", "copied_adset_id",
+    )
+
+
+@mcp.tool()
+def duplicate_campaign(
+    campaign_id: str,
+    new_name: str | None = None,
+    rename_suffix: str | None = None,
+    status_option: str = "PAUSED",
+    deep_copy: bool = True,
+) -> Any:
+    """Duplica uma campanha inteira via Graph API.
+
+    deep_copy=True (default): duplica ad sets e ads recursivamente.
+    status_option: PAUSED (default) | ACTIVE | INHERITED_FROM_SOURCE.
+    Retorna {"copied_campaign_id": "...", "ad_object_ids": [...]}.
+    """
+    return _duplicate(
+        campaign_id, new_name, rename_suffix, status_option, deep_copy,
+        None, "campaign", "copied_campaign_id",
+    )
+
+
+@mcp.tool()
+def duplicate_ad(
+    ad_id: str,
+    new_name: str | None = None,
+    rename_suffix: str | None = None,
+    status_option: str = "PAUSED",
+    ad_set_id: str | None = None,
+) -> Any:
+    """Duplica um ad isolado via Graph API.
+
+    status_option: PAUSED (default) | ACTIVE | INHERITED_FROM_SOURCE.
+    ad_set_id: move o novo ad pra outro ad set. Default = mesmo.
+    Nao tem deep_copy (ad eh folha).
+    Retorna {"copied_ad_id": "...", ...}.
+    """
+    extra = {"adset_id": ad_set_id} if ad_set_id else None
+    return _duplicate(
+        ad_id, new_name, rename_suffix, status_option, False,
+        extra, "ad", "copied_ad_id",
+    )
+
+
 if __name__ == "__main__":
     mcp.run()
