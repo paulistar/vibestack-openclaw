@@ -165,12 +165,27 @@ Por que CLI + middleware (e não o MCP oficial em `mcp.facebook.com/ads`)? O MCP
 
 ### Gerar o System User Token (uma vez só, no navegador)
 
+Segue o [guia oficial Meta Ads CLI / Primeiros passos](https://developers.facebook.com/documentation/ads-commerce/ads-ai-connectors/ads-cli/setup/get-started):
+
 1. **Criar um Meta Developer App** em https://developers.facebook.com/apps → Create App → tipo **Business** → adicionar produto **Marketing API**.
-2. **Adicionar o App ao Business Manager** (business.facebook.com → Business Settings → Accounts → Apps).
-3. **Criar System User** (Business Settings → Users → System Users → Add, role Admin).
-4. **Atribuir Ad Accounts** ao system user com permissão Manage campaigns.
-5. **Atribuir o App** ao system user com permissão Develop App.
-6. **Generate New Token** → escolhe seu App → escopos `ads_read` + `ads_management` → Generate. **Copia o token**. Não expira.
+2. **Adicionar o App ao Business Manager** (Business Suite → Configurações → Contas → Apps → Adicionar).
+3. **Criar System User** em Business Suite → Configurações → Usuários → **Usuários do Sistema** → Adicionar. Função: **Administrador**. Nome sugerido: "CLI de anúncios".
+4. **Atribuir ativos** ao system user (botão Atribuir ativos). Inclua:
+   - Contas de anúncios (com permissão **Gerenciar campanhas**)
+   - Páginas comerciais (pra criativos)
+   - Catálogos de produtos (se usar ads de catálogo)
+   - Conjuntos de dados / Pixels (pra rastreio de conversão)
+5. **Adicionar o system user como Admin do App** em Meta for Developers → seu App → **Configurações do App** → **Funções** → **Funções** → Adicionar Administradores → escolher o system user. **Sem esse passo o token sai sem permissão pra falar pelo App.**
+6. **Gerar token**: Business Suite → Usuários do Sistema → seu user → **Gerar novo token** → escolher seu App → marcar os **7 escopos**:
+   - `business_management`
+   - `ads_management`
+   - `pages_show_list`
+   - `pages_read_engagement`
+   - `pages_manage_ads`
+   - `catalog_management`
+   - `read_insights`
+
+   Adicione mais escopos se um tool específico do middleware exigir. **Copia o token agora** — System User Tokens **não expiram**.
 
 ### Configurar `.env`
 
@@ -218,12 +233,20 @@ Tools disponíveis para o agente: `list_ad_accounts`, `get_ad_account`, `current
 docker compose exec openclaw-gateway meta --version
 docker compose exec openclaw-gateway meta ads --help
 
+# Status oficial da auth (checa token + scopes + app binding)
+docker compose exec openclaw-gateway meta auth status
+
 # Smoke test com o token
 docker compose exec openclaw-gateway sh -c 'meta ads adaccount list --output json'
 
 # Middleware (Ctrl+C pra sair — ele espera stdio)
 docker compose exec openclaw-gateway /opt/middleware-venv/bin/python /app/middleware/meta_ads_cli_mcp.py
 ```
+
+Se `meta auth status` reclamar:
+- **"app not authorized" / "user not allowed"** → faltou o passo 5 (adicionar system user como Admin do App).
+- **"insufficient scope"** ao chamar um tool específico → regenerar token marcando o escopo faltante.
+- **"invalid token"** → token expirado ou copiado errado; regerar.
 
 ### Adicionar ou customizar tools
 
