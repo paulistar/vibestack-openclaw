@@ -18,9 +18,9 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
 RUN uv tool install --python 3.12 meta-ads
 
 # Python SDK do MCP para o middleware customizado (middleware/meta_ads_cli_mcp.py).
-# Instalamos no mesmo Python 3.12 do uv via venv compartilhado.
+# Venv criado por uv vem sem pip — usamos `uv pip install` no venv ativo via VIRTUAL_ENV.
 RUN uv venv --python 3.12 /opt/middleware-venv \
- && /opt/middleware-venv/bin/pip install --no-cache-dir "mcp>=1.0"
+ && VIRTUAL_ENV=/opt/middleware-venv uv pip install --no-cache "mcp>=1.0"
 
 ENV PATH=/root/.local/bin:$PATH
 
