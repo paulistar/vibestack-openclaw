@@ -157,7 +157,62 @@ curl http://127.0.0.1:11434/api/tags   # do laptop
 
 ---
 
-## 5) CLI `openclaw` dentro do container
+## 5) Meta Ads MCP server
+
+A imagem inclui o [`meta-ads-mcp`](https://github.com/pipeboard-co/meta-ads-mcp) (PyPI, BUSL-1.1) instalado via `pip3`. Ele expõe a Marketing API da Meta como ferramentas MCP que o openclaw pode chamar.
+
+### Gerar o System User Token (uma vez só, no navegador)
+
+1. **Criar um Meta Developer App** em https://developers.facebook.com/apps → Create App → tipo **Business** → adicionar produto **Marketing API**. Anote `App ID` e `App Secret`.
+2. **Adicionar o App ao Business Manager**: https://business.facebook.com → Business Settings → Accounts → Apps → Add → escolher o app que você criou.
+3. **Criar System User**: Business Settings → Users → System Users → Add. Role: **Admin** (ou Employee).
+4. **Atribuir Ad Accounts** ao system user: Business Settings → Accounts → Ad Accounts → escolher conta → Add People → selecionar o system user → permissão **Manage campaigns**.
+5. **Atribuir o App** ao system user: System Users → seu user → Add Assets → Apps → seu app → permissão **Develop App**.
+6. **Gerar token**: System Users → seu user → Generate New Token → escolher seu app → escopos `ads_read` + `ads_management` → Generate. **Copie o token agora** (não dá pra ver depois). System User tokens **não expiram**.
+
+### Colocar o token no `.env` da VPS
+
+```bash
+cd ~/openclaw   # ou ~/vibestack-openclaw
+nano .env
+# adicione/edite a linha:
+# META_ACCESS_TOKEN=EAAxxxxx... (o token do passo 6)
+```
+
+### Registrar no openclaw.json
+
+O arquivo `openclaw.json` fica em `${OPENCLAW_CONFIG_DIR}/openclaw.json` no host (default `/root/.openclaw/openclaw.json`). Adicione/mescle a seção `mcpServers`:
+
+```json5
+{
+  // ... outras configs do openclaw ...
+  "mcpServers": {
+    "meta-ads": {
+      "command": "meta-ads-mcp"
+      // sem `env:` aqui — o subprocesso herda META_ACCESS_TOKEN do container
+    }
+  }
+}
+```
+
+### Aplicar
+
+```bash
+docker compose up -d --force-recreate openclaw-gateway   # pra pegar a env nova
+docker compose logs -f openclaw-gateway | grep -i mcp    # deve aparecer "meta-ads" na lista de mcp servers
+```
+
+Dentro da UI do openclaw o agente passa a ter ferramentas tipo `ads_get_ad_accounts`, `ads_create_campaign`, `ads_insights_*` etc.
+
+### Testar isolado
+
+```bash
+docker compose exec openclaw-gateway sh -c 'META_ACCESS_TOKEN=$META_ACCESS_TOKEN meta-ads-mcp --help'
+```
+
+---
+
+## 6) CLI `openclaw` dentro do container
 
 A imagem inclui um wrapper em `/usr/local/bin/openclaw` que aponta para `node /app/dist/index.js`. Então, em vez de:
 
@@ -176,7 +231,7 @@ Funciona com qualquer subcomando do openclaw.
 
 ---
 
-## 6) Persistência
+## 7) Persistência
 
 Sobrevivem a `docker compose down`/rebuild:
 
@@ -186,7 +241,7 @@ Sobrevivem a `docker compose down`/rebuild:
 
 ---
 
-## 7) Troubleshooting
+## 8) Troubleshooting
 
 - **Build falha com exit 137** → falta de RAM. Aumente swap ou suba para um VM maior.
 - **`AllowTcpForwarding` bloqueado** → ajustar `sshd_config` conforme acima.

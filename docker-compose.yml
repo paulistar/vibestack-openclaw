@@ -18,6 +18,7 @@ services:
       - GOG_KEYRING_PASSWORD=${GOG_KEYRING_PASSWORD}
       - XDG_CONFIG_HOME=${XDG_CONFIG_HOME}
       - OLLAMA_MODELS=/var/lib/ollama
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw

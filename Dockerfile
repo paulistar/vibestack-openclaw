@@ -5,8 +5,12 @@ ARG OPENCLAW_REPO=https://github.com/openclaw/openclaw.git
 ARG OPENCLAW_REF=main
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd \
+ && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd python3 python3-pip \
  && rm -rf /var/lib/apt/lists/*
+
+# Meta Ads MCP server (Marketing API embrulhada em protocolo MCP).
+# Le META_ACCESS_TOKEN do env do processo openclaw — basta ter no compose/.env.
+RUN pip3 install --break-system-packages --no-cache-dir meta-ads-mcp
 
 # Ollama — instalado dentro da imagem (mesmo padrao de um desktop linux).
 # O script oficial baixa o binario, instala em /usr/local/bin/ollama e tenta
