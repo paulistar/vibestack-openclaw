@@ -34,7 +34,14 @@ register_mcp() {
   fi
 }
 
-register_mcp meta-ads '{"command":"/opt/middleware-venv/bin/python","args":["/app/middleware/meta_ads_cli_mcp.py"]}'
+# Tokens da Meta CLI: o openclaw spawna o MCP child com env reduzido, entao
+# repassamos ACCESS_TOKEN/AD_ACCOUNT_ID/BUSINESS_ID explicitamente. Sem isso o
+# subprocesso 'meta' devolve "No access token found" / "No ad account configured".
+if [ -z "${ACCESS_TOKEN:-}" ]; then
+  echo "[entrypoint] AVISO: ACCESS_TOKEN vazio — meta-ads MCP vai falhar auth. Verifique META_ACCESS_TOKEN no .env."
+fi
+
+register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/meta_ads_cli_mcp.py\"],\"env\":{\"ACCESS_TOKEN\":\"${ACCESS_TOKEN:-}\",\"AD_ACCOUNT_ID\":\"${AD_ACCOUNT_ID:-}\",\"BUSINESS_ID\":\"${BUSINESS_ID:-}\"}}"
 
 # Acrescente novos MCP servers aqui no mesmo padrao:
 # register_mcp outro-server '{"command":"...","args":[...]}'
