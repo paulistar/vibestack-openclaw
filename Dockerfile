@@ -49,7 +49,11 @@ RUN corepack enable \
  && pnpm ui:install \
  && pnpm ui:build
 
+# Wrapper para usar `openclaw <comando>` em vez de `node dist/index.js <comando>`
+RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/openclaw \
+ && chmod +x /usr/local/bin/openclaw
+
 ENV NODE_ENV=production
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-CMD ["node","dist/index.js"]
+CMD ["openclaw"]

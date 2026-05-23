@@ -2,6 +2,8 @@
 
 Imagem Docker customizada do [OpenClaw](https://github.com/openclaw/openclaw) com bloco demarcado para "bake" de binários/CLIs adicionais, pronta para rodar em uma VPS Hetzner (ou qualquer host Docker).
 
+Inclui também um serviço **Ollama** no mesmo compose para rodar modelos LLM locais, acessível pelo openclaw via `http://ollama:11434`.
+
 O source do openclaw **não é versionado aqui** — o `Dockerfile` faz `git clone` do upstream em build-time, pinado pela variável `OPENCLAW_REF`.
 
 ---
@@ -10,8 +12,8 @@ O source do openclaw **não é versionado aqui** — o `Dockerfile` faz `git clo
 
 ```
 .
-├── Dockerfile          # Base node:24-bookworm + clone do openclaw + bloco de binarios extras
-├── docker-compose.yml  # Servico openclaw-gateway, bind em 127.0.0.1
+├── Dockerfile          # Base node:24-bookworm + clone do openclaw + bloco de binarios extras + wrapper `openclaw`
+├── docker-compose.yml  # Servicos openclaw-gateway (porta 18789) e ollama (interno, 11434)
 ├── .env.example        # Variaveis de ambiente — copiar para .env
 ├── .gitignore
 └── README.md
@@ -80,11 +82,11 @@ cp .env.example .env
 #   openssl rand -hex 32
 nano .env
 
-mkdir -p /root/.openclaw/workspace
+mkdir -p /root/.openclaw/workspace /root/.ollama
 chown -R 1000:1000 /root/.openclaw
 
 docker compose build
-docker compose up -d openclaw-gateway
+docker compose up -d
 docker compose logs -f openclaw-gateway
 ```
 
@@ -123,16 +125,64 @@ docker compose up -d
 
 ---
 
-## 4) Persistência
+## 4) Ollama (modelo local)
+
+O serviço `ollama` sobe junto pelo compose. Por padrão **não tem porta exposta no host** — é alcançável só de dentro da rede do compose, em `http://ollama:11434`. O `openclaw-gateway` recebe essa URL via `OLLAMA_HOST`.
+
+### Baixar um modelo
+
+```bash
+docker compose exec ollama ollama pull llama3.2:3b
+# ou qwen2.5:7b, mistral, phi3, etc.
+docker compose exec ollama ollama list
+```
+
+Os modelos ficam em `${OLLAMA_DATA_DIR}` no host (default `/root/.ollama`), persistem entre rebuilds.
+
+### Configurar dentro do OpenClaw
+
+Na UI do openclaw, configure o provider Ollama com a URL `http://ollama:11434` e escolha o modelo que você baixou.
+
+### Acessar Ollama do laptop (opcional)
+
+Descomente o bloco `ports:` do serviço `ollama` no `docker-compose.yml`, suba de novo, e crie o tunnel:
+
+```bash
+ssh -N -L 11434:127.0.0.1:11434 root@YOUR_VPS_IP
+```
+
+---
+
+## 5) CLI `openclaw` dentro do container
+
+A imagem inclui um wrapper em `/usr/local/bin/openclaw` que aponta para `node /app/dist/index.js`. Então, em vez de:
+
+```bash
+docker compose exec openclaw-gateway node dist/index.js security audit
+```
+
+você roda:
+
+```bash
+docker compose exec openclaw-gateway openclaw security audit
+docker compose exec openclaw-gateway openclaw --help
+```
+
+Funciona com qualquer subcomando do openclaw.
+
+---
+
+## 6) Persistência
 
 Sobrevivem a `docker compose down`/rebuild:
 
 - `${OPENCLAW_CONFIG_DIR}` → `/home/node/.openclaw` (config, auth profiles, `openclaw.json`)
 - `${OPENCLAW_WORKSPACE_DIR}` → `/home/node/.openclaw/workspace`
+- `${OLLAMA_DATA_DIR}` → `/root/.ollama` no container ollama (modelos baixados)
 
 ---
 
-## 5) Troubleshooting
+## 7) Troubleshooting
 
 - **Build falha com exit 137** → falta de RAM. Aumente swap ou suba para um VM maior.
 - **`AllowTcpForwarding` bloqueado** → ajustar `sshd_config` conforme acima.
