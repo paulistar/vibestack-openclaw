@@ -13,10 +13,8 @@ O source do openclaw **não é versionado aqui** — o `Dockerfile` faz `git clo
 ```
 .
 ├── Dockerfile               # node:24-bookworm + openclaw + ollama + meta-ads + middleware
-├── entrypoint.sh            # Seed do openclaw.json + ollama serve em background + exec CMD
+├── entrypoint.sh            # ollama serve + 'openclaw mcp set' (registra MCPs) + exec CMD
 ├── docker-compose.yml       # Servico unico openclaw-gateway (porta 18789 + 11434 loopback)
-├── config/
-│   └── openclaw.json        # Template versionado da config do openclaw (IaC)
 ├── middleware/
 │   ├── meta_ads_cli_mcp.py  # MCP server Python envelopando a CLI 'meta'
 │   └── requirements.txt
@@ -204,11 +202,38 @@ nano .env
 
 O `docker-compose.yml` injeta esses dois como `ACCESS_TOKEN` e `AD_ACCOUNT_ID` (nomes que a CLI espera).
 
-### Registro no openclaw.json (automático — Infrastructure as Code)
+### Registro no openclaw.json (automático — Infrastructure as Code via CLI)
 
-A entrada `mcp.servers.meta-ads` já está no template versionado em [`config/openclaw.json`](config/openclaw.json). No primeiro boot do container, o `entrypoint.sh` copia esse template para `/home/node/.openclaw/openclaw.json` (= `/root/.openclaw/openclaw.json` no host via volume). **Nada a editar manualmente.**
+O `entrypoint.sh` registra o `meta-ads` (e qualquer outro MCP que você adicionar) **a cada boot** chamando o próprio CLI do openclaw:
 
-> **Schema correto:** openclaw espera `mcp.servers.{nome}` (aninhado), **não** `mcpServers` top-level. Se preferir registrar via CLI sem editar JSON: `openclaw mcp set <nome> '<json>'`.
+```sh
+openclaw mcp set meta-ads '{"command":"/opt/middleware-venv/bin/python","args":["/app/middleware/meta_ads_cli_mcp.py"]}'
+```
+
+Vantagens vs editar JSON na mão:
+- **Schema validado** pelo openclaw — não tem como quebrar a config.
+- **Idempotente** — pode rodar todo boot sem efeito colateral.
+- Grava em `mcp.servers.meta-ads` no formato canônico.
+
+### Adicionar outro MCP server
+
+Edita o `entrypoint.sh` no bloco "Registro de MCP servers":
+
+```sh
+register_mcp meu-server '{"command":"/caminho/binario","args":["arg1","arg2"]}'
+```
+
+Commit, pull na VPS, `docker compose up -d --force-recreate`.
+
+### Pré-requisito (uma vez por VPS)
+
+O `openclaw mcp set` só funciona se o `openclaw.json` já existir (com configuração de gateway/auth). Em VPS nova, rode o wizard do openclaw primeiro:
+
+```bash
+docker compose exec openclaw-gateway openclaw configure
+```
+
+Depois disso o entrypoint cuida da parte dos MCPs.
 
 Comportamento:
 - **Arquivo não existe** → entrypoint seedará do template.
