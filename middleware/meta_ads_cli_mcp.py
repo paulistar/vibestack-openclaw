@@ -18,6 +18,7 @@ Use 'none' para omitir a flag e deixar o default da CLI.
 Pacote oficial: https://pypi.org/project/meta-ads/  (v1.0.1, Meta).
 """
 import json
+import os
 import subprocess
 from typing import Any
 
@@ -106,8 +107,16 @@ def get_ad_account(ad_account_id: str, output_format: str = "json") -> Any:
 
 @mcp.tool()
 def current_ad_account(output_format: str = "json") -> Any:
-    """Ad account ativa (definida em AD_ACCOUNT_ID env)."""
-    return _run("adaccount", "current", output_format=output_format)
+    """Ad account ativa (lida do env AD_ACCOUNT_ID).
+
+    Lê direto do env em vez de chamar `meta ads adaccount current`, porque a
+    CLI ignora --output json nesse subcomando e devolve sempre texto plano
+    ("Ad Account ID: act_..."), o que quebra o parsing.
+    """
+    ad_account_id = os.environ.get("AD_ACCOUNT_ID", "")
+    if output_format == "json":
+        return {"ad_account_id": ad_account_id} if ad_account_id else {"ad_account_id": None, "warning": "AD_ACCOUNT_ID nao definido no env"}
+    return f"Ad Account ID: {ad_account_id}" if ad_account_id else "Ad Account ID: (nao definido)"
 
 
 # ============================================================
