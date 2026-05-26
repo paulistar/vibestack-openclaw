@@ -27,7 +27,8 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
   - [Passo 10 — SSH tunnel do laptop](#passo-10--ssh-tunnel-do-laptop)
   - [Passo 11 — Abrir a UI e criar o primeiro agente](#passo-11--abrir-a-ui-e-criar-o-primeiro-agente)
   - [Passo 12 — Smoke test do MCP Meta Ads](#passo-12--smoke-test-do-mcp-meta-ads)
-  - [Passo 13 — (Opcional) Habilitar agent-to-agent e subagentes](#passo-13--opcional-habilitar-agent-to-agent-e-subagentes)
+  - [Passo 13 — (Opcional) Habilitar subagentes](#passo-13--opcional-habilitar-subagentes)
+  - [Passo 14 — (Opcional) Disparar cadeia de agentes via cron](#passo-14--opcional-disparar-cadeia-de-agentes-via-cron)
 - [Atualizar o projeto na VPS](#atualizar-o-projeto-na-vps)
 - [Baixar modelos no Ollama](#baixar-modelos-no-ollama)
 - [Referência técnica](#referência-técnica)
@@ -287,11 +288,11 @@ docker compose exec openclaw-vibestack meta auth status
 docker compose exec openclaw-vibestack meta --output json ads campaign list
 ```
 
-### Passo 13 — (Opcional) Habilitar agent-to-agent e subagentes
+### Passo 13 — (Opcional) Habilitar subagentes
 
-**Pule esse passo se você só vai operar com um agente único.** Esse passo libera comunicação entre agentes (`sessions_send`, `sessions_history`, `sessions_list`, `session_status`) e permite que um agente spawne outro como subagente — pré-requisito pra rodar a [arquitetura multi-agente recomendada](#arquitetura-multi-agente-recomendada-opcional) (Analista → Estrategista → Executor).
+**Pule esse passo se você só vai operar com um agente único.** Esse passo libera o padrão de subagentes — um agente delega trabalho a outro via `sessions_spawn`, que é **bloqueante** e devolve o resultado como tool-result no mesmo turno do pai. É o que viabiliza fluxos como "atendimento delega análise pro analista, recebe os dados, sintetiza".
 
-Por padrão o OpenClaw bloqueia spawn cruzado (`agentId is not allowed for sessions_spawn`). Os comandos abaixo destravam.
+Por padrão o OpenClaw bloqueia spawn cruzado (`agentId is not allowed for sessions_spawn`). O comando abaixo destrava.
 
 Todos os comandos rodam dentro do container:
 
@@ -299,65 +300,124 @@ Todos os comandos rodam dentro do container:
 docker compose exec -it openclaw-vibestack bash
 ```
 
-**1. Habilita agent-to-agent**
-
-```bash
-openclaw config set tools.agentToAgent.enabled true
-
-openclaw config set tools.agentToAgent.allow \
-  '["analista","estrategista","copywriter","criativo","gestor-trafego","diretor"]'
-```
-
-Isso libera as tools `sessions_send`, `sessions_history`, `sessions_list`, `session_status` entre os agentes da allowlist. Troque a lista pelos IDs dos agentes que você criou na UI.
-
-**2. Habilita subagentes e allowlist de spawn cruzado**
+**1. Habilita subagentes e allowlist de spawn cruzado**
 
 ```bash
 openclaw config set agents.defaults.subagents.maxSpawnDepth 2
 openclaw config set agents.defaults.subagents.allowAgents '["*"]'
-openclaw config set agents.defaults.subagents.delegationMode "prefer"
-openclaw config set agents.defaults.subagents.maxConcurrent 4
-openclaw config set agents.defaults.subagents.runTimeoutSeconds 600
+openclaw config set agents.defaults.subagents.announceTimeoutMs 300000
 ```
 
 O que cada chave faz:
 
-- **`maxSpawnDepth: 2`** — permite padrão orquestrador (Analista → spawna Estrategista que pode spawnar trabalhador). Se você não precisa de aninhamento, deixe em `1`.
-- **`allowAgents: ["*"]`** — qualquer agente pode spawnar qualquer outro. É a chave que destrava o erro `agentId is not allowed for sessions_spawn`.
-- **`delegationMode: "prefer"`** — instrui o modelo a delegar via subagente em vez de tentar resolver sozinho.
-- **`maxConcurrent: 4`** — máximo de subagentes rodando simultaneamente.
-- **`runTimeoutSeconds: 600`** — mata subagente que rodar mais de 10 minutos. Defesa contra loop.
+- **`maxSpawnDepth: 2`** — permite orquestrador (atendimento spawna analista, que pode spawnar trabalhador). Deixe em `1` se não precisar de aninhamento.
+- **`allowAgents: ["*"]`** — qualquer agente pode spawnar qualquer outro. É a chave que destrava `agentId is not allowed for sessions_spawn`.
+- **`announceTimeoutMs: 300000`** — 5min de janela pra entrega do resultado do filho ao pai. Sobe se você espera tarefas longas.
 
-**3. Confere e ajusta o perfil de tools de cada agente**
+**2. Cria os agentes adicionais em `agents.list`**
 
-Lista o estado atual:
+Cada agente é uma entrada em `agents.list` do `openclaw.json`. Exemplo mínimo do `analista`:
 
-```bash
-openclaw config get agents.list
+```json
+{
+  "id": "analista",
+  "name": "Analista",
+  "workspace": "/root/.openclaw/workspace/analista",
+  "agentDir": "/root/.openclaw/agents/analista/agent"
+}
 ```
 
-Os agentes devem ter `profile: "coding"` ou `profile: "full"` — perfis menores não expõem as tools de sessão.
+Os agentes herdam tudo de `agents.defaults` — model, `workspace` base, e o bloco `subagents` que você setou no item 1. O catálogo de tools vem do `tools.profile` global (`"coding"` neste repo) — esse perfil já expõe as tools básicas + as tools de qualquer MCP registrado, então **você não precisa configurar `tools.alsoAllow` por agente** pra que o analista use `meta-ads__*`.
 
-**4. Reinicia o gateway**
+O `openclaw.json` deste repo traz um exemplo funcional com `atendimento` + `analista` nesse formato mínimo. Use como referência.
+
+> `sessions_spawn` vem implícita do bloco `subagents` — o modelo a chama com `runtime: 'subagent'`, `agentId: '<destino>'`, `task: '<descrição>'`, e o turno do pai bloqueia até o filho retornar com o tool-result.
+>
+> `sessions_yield` **não existe** nesse build do OpenClaw (confirmado por grep no source). Não instrua o modelo a chamá-la — seria no-op e fecharia o turno antes do filho responder.
+
+**3. Reinicia o gateway**
 
 ```bash
 openclaw gateway restart
 ```
 
-**5. Valida**
+**4. Valida**
 
 ```bash
-openclaw config get tools.agentToAgent
 openclaw config get agents.defaults.subagents
+openclaw config get agents.list
 ```
 
-A saída do primeiro deve mostrar `enabled: true` e sua allowlist. A do segundo deve refletir as cinco chaves de `subagents` que você setou.
+A primeira saída deve mostrar `maxSpawnDepth: 2`, `allowAgents: ["*"]`, `announceTimeoutMs: 300000`. A segunda deve listar `main` + seus agentes adicionais.
 
-Depois disso, no chat de qualquer agente da allowlist, você pode pedir coisas como:
+Depois disso, no chat do agente orquestrador (ex: `atendimento`), você pode pedir coisas como:
 
-> Pergunte ao estrategista qual a próxima ação recomendada e me traga a resposta.
+> Delegue ao analista listar minhas campanhas Meta Ads e me traga uma análise crítica.
 
-E o agente vai usar `sessions_send` ou spawnar um subagente conforme o `delegationMode`.
+E o orquestrador vai chamar `sessions_spawn(runtime: 'subagent', agentId: 'analista', task: '...')`, aguardar o tool-result no mesmo turno e sintetizar.
+
+### Passo 14 — (Opcional) Disparar cadeia de agentes via cron
+
+O OpenClaw inclui um scheduler interno (`openclaw cron`) que dispara mensagens pra agentes em horários ou intervalos. Combinado com o padrão de subagentes do Passo 13, dá pra orquestrar fluxos automáticos sem nenhum trigger externo — ex: atendimento delega análise pro analista, que consulta o MCP Meta Ads, e o atendimento sintetiza, tudo dentro de um único turno bloqueante.
+
+**Exemplo funcional: atendimento → analista (com MCP Meta Ads)**
+
+```bash
+docker compose exec openclaw-vibestack openclaw cron add \
+  --name "Cadeia atendimento→analista" \
+  --at "30s" \
+  --tz "America/Sao_Paulo" \
+  --session isolated \
+  --agent atendimento \
+  --delete-after-run \
+  --message "Você executa em UM ÚNICO turno bloqueante.
+
+ETAPA 1 — Delegue ao Analista
+
+Chame sessions_spawn com:
+  runtime: 'subagent'
+  agentId: 'analista'
+  task: 'Use meta-ads para listar campanhas. Retorne tabela Markdown com colunas: ID, Nome, Status, Spend, Impressions, Clicks, Conversions.'
+
+IMPORTANTE:
+- sessions_spawn é BLOQUEANTE neste runtime
+- Retorna o resultado do Analista como tool-result no mesmo turno
+- NÃO chame sessions_yield (não existe nesta versão)
+- Aguarde o tool-result antes de prosseguir
+
+ETAPA 2 — Ainda no mesmo turno, processe o resultado
+
+Sintetize:
+
+## Resumo do que o Analista entregou
+[2 linhas]
+
+## Análise crítica
+- Melhor campanha: [nome — motivo]
+- Pior campanha: [nome — hipótese]
+- Saturação detectada: [sim/não, onde]
+
+## Recomendações (sem executar)
+1. [ação]
+2. [ação]
+3. [ação]"
+```
+
+Pontos críticos do comando:
+
+- **`--session isolated`** — obrigatório quando `--agent` aponta pra um agente que não é o `main`. O CLI rejeita `--session main` nesse caso com `sessionTarget "main" is only valid for the default agent`.
+- **`--agent atendimento`** — quem recebe a mensagem. Esse é o orquestrador que vai spawnar o subagente.
+- **`--delete-after-run`** — remove o job depois de uma execução. Use `--keep-after-run` se quiser deixar persistido (vira `idle` no `cron list` depois de rodar — comportamento esperado).
+- **`sessions_spawn` é bloqueante** — não chame `sessions_yield` (não existe nesse build). O turno do pai aguarda o tool-result do spawn dentro do mesmo turno; tentar "ceder" o turno faz o pai morrer antes do filho anunciar e dispara `Subagent announce give up` nos logs.
+
+**Listar e remover jobs:**
+
+```bash
+docker compose exec openclaw-vibestack openclaw cron list
+docker compose exec openclaw-vibestack openclaw cron rm <jobId>
+```
+
+Jobs persistem em `/root/.openclaw/cron/jobs.json` — sobrevivem a `docker compose down`/restart por causa do volume do Passo 7.
 
 ---
 
@@ -469,7 +529,7 @@ Princípios:
 
 Esse padrão não está hardcoded no MCP — é arquitetura que você compõe na UI do OpenClaw. O MCP só expõe as ferramentas; cada agente decide quando usa.
 
-> Pra esse padrão funcionar (Estrategista delegar pro Executor, Analista falar com Coletor, etc.) você precisa habilitar agent-to-agent e subagentes — veja [Passo 13](#passo-13--opcional-habilitar-agent-to-agent-e-subagentes). Sem isso, o OpenClaw bloqueia spawn cruzado com `agentId is not allowed for sessions_spawn`.
+> Pra esse padrão funcionar (Estrategista delegar pro Executor, Analista invocar o Coletor, etc.) você precisa habilitar subagentes — veja [Passo 13](#passo-13--opcional-habilitar-subagentes). Sem isso, o OpenClaw bloqueia spawn cruzado com `agentId is not allowed for sessions_spawn`. Pra agendar disparos automáticos sem trigger externo, combine com o [Passo 14](#passo-14--opcional-disparar-cadeia-de-agentes-via-cron).
 
 ### Adicionar uma CLI nova à imagem
 
@@ -553,11 +613,23 @@ Mudança no upstream. Troca `OPENCLAW_REF` no `.env` pra uma tag/commit conhecid
 
 ### `agentId is not allowed for sessions_spawn`
 
-Spawn cruzado entre agentes está desabilitado por padrão. Rode o [Passo 13](#passo-13--opcional-habilitar-agent-to-agent-e-subagentes) — especificamente o `agents.defaults.subagents.allowAgents '["*"]'` e o restart do gateway.
+Spawn cruzado entre agentes está desabilitado por padrão. Rode o [Passo 13](#passo-13--opcional-habilitar-subagentes) — especificamente o `agents.defaults.subagents.allowAgents '["*"]'` e o restart do gateway.
 
-### Agente não consegue chamar `sessions_send` / `sessions_history`
+### Agente não vê tools de MCP (ex: `meta-ads__*`) no catálogo
 
-O agent-to-agent não está habilitado, ou o ID do agente que chama não está na allowlist. Confere com `openclaw config get tools.agentToAgent` e adiciona o ID no array `allow`. Reinicia o gateway depois.
+As tools de MCP são herdadas pelo agente via o perfil global `tools.profile` (este repo usa `"coding"`, que já expõe as tools básicas + MCP). Se o agente não vê:
+
+1. Confirme que `tools.profile` no `openclaw.json` está em `"coding"` ou `"full"` — perfis menores não expõem MCP.
+2. Confirme que o MCP está registrado: `docker compose exec openclaw-vibestack openclaw mcp list` deve listar `meta-ads`. Se não, refaça o Passo 9.
+3. Cheque os logs do gateway por linhas `tool policy removed N tool(s)` — algum override per-agente pode estar derrubando tools sem querer.
+
+### `Subagent announce give up (retry-limit)` no log do cron
+
+O agente pai encerrou o turno antes do subagente devolver o resultado. Causa típica: o prompt instrui o modelo a chamar `sessions_yield` (essa tool **não existe** nesse build do OpenClaw — confirmado por grep no source). O pattern correto é deixar `sessions_spawn` bloqueando o turno até o tool-result chegar; veja o exemplo no [Passo 14](#passo-14--opcional-disparar-cadeia-de-agentes-via-cron).
+
+### `cron: sessionTarget "main" is only valid for the default agent`
+
+`openclaw cron add --agent <outro>` exige `--session isolated`. Só o agente default (`main`) aceita `--session main`. Reescreve o comando com `--session isolated`.
 
 ### JSON malformado em algum tool
 
