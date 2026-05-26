@@ -1,5 +1,5 @@
 services:
-  openclaw-gateway:
+  openclaw-vibestack:
     image: ${OPENCLAW_IMAGE:-vibestack-openclaw:latest}
     build:
       context: .
@@ -16,7 +16,6 @@ services:
       - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT}
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - GOG_KEYRING_PASSWORD=${GOG_KEYRING_PASSWORD}
-      - XDG_CONFIG_HOME=${XDG_CONFIG_HOME}
       - OLLAMA_MODELS=/var/lib/ollama
       # Meta Ads CLI oficial le ACCESS_TOKEN/AD_ACCOUNT_ID; mantemos META_ACCESS_TOKEN
       # como alias historico para o .env nao mudar.
@@ -25,8 +24,9 @@ services:
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
-      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
-      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      # UM mount só, abrangendo tudo do OpenClaw
+      - ${OPENCLAW_DATA_DIR}:/root/.openclaw
+      # Ollama em mount separado (faz sentido — outro app)
       - ${OLLAMA_DATA_DIR}:/var/lib/ollama
     ports:
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT}:18789"

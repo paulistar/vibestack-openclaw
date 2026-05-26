@@ -37,7 +37,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 
 ## Arquitetura em uma frase
 
-Um container Docker (`openclaw-gateway`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, e **(c)** um middleware Python MCP que envelopa a CLI oficial `meta-ads` da Meta como ~60 tools tipados pro agente.
+Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, e **(c)** um middleware Python MCP que envelopa a CLI oficial `meta-ads` da Meta como ~60 tools tipados pro agente.
 
 O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, propagando `ACCESS_TOKEN`/`AD_ACCOUNT_ID` pro processo filho.
 
@@ -165,12 +165,11 @@ openssl rand -hex 32   # roda outra pro keyring password
 ### Passo 7 — Build + Up
 
 ```bash
-mkdir -p /root/.openclaw/workspace /root/.ollama
-chown -R 1000:1000 /root/.openclaw
+mkdir -p /root/.openclaw /root/.ollama
 
 docker compose build
 docker compose up -d
-docker compose logs -f openclaw-gateway
+docker compose logs -f openclaw-vibestack
 ```
 
 O build leva ~5-10min na primeira vez (pnpm install do openclaw + uv install da meta-ads + ollama). Espera o log estabilizar — você deve ver:
@@ -187,7 +186,7 @@ Sai do log com `Ctrl+C` (container continua rodando).
 O OpenClaw exige um wizard inicial pra criar `openclaw.json`. **Esse passo é interativo**:
 
 ```bash
-docker compose exec openclaw-gateway openclaw configure
+docker compose exec openclaw-vibestack openclaw configure
 ```
 
 Responde as perguntas (auth mode, modelo default, etc.). Detalhes em https://docs.openclaw.ai.
@@ -195,13 +194,13 @@ Responde as perguntas (auth mode, modelo default, etc.). Detalhes em https://doc
 Depois do wizard, **reinicia o container** pra que o entrypoint registre o MCP:
 
 ```bash
-docker compose up -d --force-recreate openclaw-gateway
+docker compose up -d --force-recreate openclaw-vibestack
 ```
 
 ### Passo 9 — Confirmar MCP registrado
 
 ```bash
-docker compose logs openclaw-gateway | grep -iE "mcp|meta-ads"
+docker compose logs openclaw-vibestack | grep -iE "mcp|meta-ads"
 ```
 
 Espera ver: `[entrypoint] mcp 'meta-ads' registrado`. Se aparecer `AVISO: ACCESS_TOKEN vazio`, volta no Passo 6 e preenche.
@@ -209,7 +208,7 @@ Espera ver: `[entrypoint] mcp 'meta-ads' registrado`. Se aparecer `AVISO: ACCESS
 Pra inspecionar a config gravada:
 
 ```bash
-docker compose exec openclaw-gateway cat /home/node/.openclaw/openclaw.json | grep -A8 meta-ads
+docker compose exec openclaw-vibestack cat /root/.openclaw/openclaw.json | grep -A8 meta-ads
 ```
 
 Deve mostrar `command`, `args` e um objeto `env` com `ACCESS_TOKEN`, `AD_ACCOUNT_ID`, `BUSINESS_ID`.
@@ -284,8 +283,8 @@ Duplica o ad set <ID> com sufixo "-copy-test" em PAUSED.
 Comandos diretos no container pra debug:
 
 ```bash
-docker compose exec openclaw-gateway meta auth status
-docker compose exec openclaw-gateway meta --output json ads campaign list
+docker compose exec openclaw-vibestack meta auth status
+docker compose exec openclaw-vibestack meta --output json ads campaign list
 ```
 
 ### Passo 13 — (Opcional) Habilitar agent-to-agent e subagentes
@@ -297,7 +296,7 @@ Por padrão o OpenClaw bloqueia spawn cruzado (`agentId is not allowed for sessi
 Todos os comandos rodam dentro do container:
 
 ```bash
-docker compose exec -it openclaw-gateway bash
+docker compose exec -it openclaw-vibestack bash
 ```
 
 **1. Habilita agent-to-agent**
@@ -368,7 +367,7 @@ E o agente vai usar `sessions_send` ou spawnar um subagente conforme o `delegati
 cd ~/vibestack-openclaw
 git pull
 docker compose build           # se Dockerfile ou middleware/ mudou
-docker compose up -d --force-recreate openclaw-gateway
+docker compose up -d --force-recreate openclaw-vibestack
 ```
 
 Pra atualizar a versão do openclaw upstream, edita no `.env`:
@@ -389,9 +388,9 @@ docker compose up -d
 ## Baixar modelos no Ollama
 
 ```bash
-docker compose exec openclaw-gateway ollama pull llama3.2:3b
-docker compose exec openclaw-gateway ollama pull qwen2.5:7b
-docker compose exec openclaw-gateway ollama list
+docker compose exec openclaw-vibestack ollama pull llama3.2:3b
+docker compose exec openclaw-vibestack ollama pull qwen2.5:7b
+docker compose exec openclaw-vibestack ollama list
 ```
 
 Modelos ficam em `/root/.ollama` no host (volume), persistem entre rebuilds.
@@ -411,7 +410,7 @@ Sugestões por tamanho:
 .
 ├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware
 ├── entrypoint.sh            # ollama serve + openclaw mcp set + exec CMD
-├── docker-compose.yml       # serviço único openclaw-gateway, env, volumes, portas
+├── docker-compose.yml       # serviço único openclaw-vibestack, env, volumes, portas
 ├── middleware/
 │   ├── meta_ads_cli_mcp.py  # MCP server Python — 70 tools (CLI + Graph API)
 │   └── requirements.txt
@@ -500,8 +499,7 @@ Commit + push + na VPS: `git pull && docker compose build && docker compose up -
 
 Sobrevivem a `docker compose down`/rebuild:
 
-- `${OPENCLAW_CONFIG_DIR}` (default `/root/.openclaw`) → `/home/node/.openclaw` no container (auth profiles, `openclaw.json`).
-- `${OPENCLAW_WORKSPACE_DIR}` (default `/root/.openclaw/workspace`) → workspace do agente.
+- `${OPENCLAW_DATA_DIR}` (default `/root/.openclaw`) → `/root/.openclaw` no container (auth profiles, `openclaw.json`, workspace do agente — tudo num mount só).
 - `${OLLAMA_DATA_DIR}` (default `/root/.ollama`) → `/var/lib/ollama` no container (modelos baixados).
 
 ### CLI `openclaw` dentro do container
@@ -509,9 +507,9 @@ Sobrevivem a `docker compose down`/rebuild:
 A imagem inclui wrapper em `/usr/local/bin/openclaw` que aponta pra `node /app/dist/index.js`:
 
 ```bash
-docker compose exec openclaw-gateway openclaw security audit
-docker compose exec openclaw-gateway openclaw mcp list
-docker compose exec openclaw-gateway openclaw --help
+docker compose exec openclaw-vibestack openclaw security audit
+docker compose exec openclaw-vibestack openclaw mcp list
+docker compose exec openclaw-vibestack openclaw --help
 ```
 
 ---
@@ -536,7 +534,7 @@ Outro processo escutando. Muda `OPENCLAW_GATEWAY_PORT` no `.env` e re-up.
 ### MCP `meta-ads` não aparece na UI
 
 ```bash
-docker compose logs openclaw-gateway | grep -iE "mcp|access_token"
+docker compose logs openclaw-vibestack | grep -iE "mcp|access_token"
 ```
 
 Procura `AVISO: falha ao registrar mcp 'meta-ads'`. Se aparecer, o `openclaw.json` não existe (precisa rodar o Passo 8) ou o schema rejeitou o JSON.
