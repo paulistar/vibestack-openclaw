@@ -57,12 +57,14 @@ register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\"
 # proxy WebSocket pro gateway. Browser conecta same-origin via /api/gateway/ws.
 #
 # O modulo studio-settings le gateway URL/token de:
-#   1. /root/.openclaw/claw3d/settings.json  (preferido)
+#   1. /root/.openclaw/claw3d/settings.json  (preferido — editavel pelo Studio UI)
 #   2. /root/.openclaw/openclaw.json -> gateway.auth.token  (apenas se token e' string)
 #
 # Como nosso openclaw.json tem token={"source":"env",...} (nao-string), o
-# fallback falha. Geramos settings.json a cada boot com o token resolvido
-# do env, mantendo gateway URL/token sempre em sincronia com o .env.
+# fallback falha. Bootstrap: gera settings.json APENAS no primeiro boot, com
+# token resolvido do env. Depois disso, deixa o Studio UI ser a fonte da
+# verdade — edicoes feitas na interface persistem entre restarts/rebuilds.
+# Pra regenerar do env (ex: token rotacionado): rm settings.json e restart.
 CLAW3D_DIR=/root/.openclaw/claw3d
 mkdir -p "$CLAW3D_DIR"
 
@@ -70,7 +72,8 @@ if [ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]; then
   echo "[entrypoint] AVISO: OPENCLAW_GATEWAY_TOKEN vazio — Claw3D Studio nao vai autenticar no gateway."
 fi
 
-cat > "$CLAW3D_DIR/settings.json" <<EOF
+if [ ! -f "$CLAW3D_DIR/settings.json" ]; then
+  cat > "$CLAW3D_DIR/settings.json" <<EOF
 {
   "gateway": {
     "url": "ws://localhost:${OPENCLAW_GATEWAY_PORT:-18789}",
@@ -79,8 +82,11 @@ cat > "$CLAW3D_DIR/settings.json" <<EOF
   }
 }
 EOF
-chmod 600 "$CLAW3D_DIR/settings.json"
-echo "[entrypoint] claw3d settings.json regenerado em $CLAW3D_DIR"
+  chmod 600 "$CLAW3D_DIR/settings.json"
+  echo "[entrypoint] claw3d settings.json criado em $CLAW3D_DIR (primeiro boot)"
+else
+  echo "[entrypoint] claw3d settings.json ja existe — preservando edicoes do Studio UI"
+fi
 
 (
   cd /opt/claw3d
