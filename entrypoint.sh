@@ -52,4 +52,31 @@ register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\"
 # Acrescente novos MCP servers aqui no mesmo padrao:
 # register_mcp outro-server '{"command":"...","args":[...]}'
 
+# --- Pixel Agents Dashboard em background ---------------------------------
+# Visualizer pixel-art dos agentes OpenClaw. Le JSONL em ~/.openclaw/agents/
+# e fala com o gateway in-process via http://localhost:18789.
+PIXEL_AGENTS_DATA=/root/.openclaw/pixel-agents
+mkdir -p "$PIXEL_AGENTS_DATA/data"
+
+# Config: copia template default no primeiro boot; depois disso, host edita.
+if [ ! -f "$PIXEL_AGENTS_DATA/dashboard.config.json" ]; then
+  cp /opt/pixel-agents-dashboard/dashboard.config.default.json \
+     "$PIXEL_AGENTS_DATA/dashboard.config.json"
+  echo "[entrypoint] dashboard.config.json criado em $PIXEL_AGENTS_DATA"
+fi
+
+# Layout dos sprites persistido no volume via symlink.
+rm -rf /opt/pixel-agents-dashboard/data 2>/dev/null || true
+ln -sfn "$PIXEL_AGENTS_DATA/data" /opt/pixel-agents-dashboard/data
+
+(
+  cd /opt/pixel-agents-dashboard \
+  && PIXEL_AGENTS_CONFIG="$PIXEL_AGENTS_DATA/dashboard.config.json" \
+     PIXEL_AGENTS_PORT="${PIXEL_AGENTS_PORT:-5070}" \
+     NODE_ENV=production \
+     npm start \
+) >/var/log/pixel-agents.log 2>&1 &
+PIXEL_PID=$!
+echo "[entrypoint] pixel-agents-dashboard iniciado (pid=$PIXEL_PID, log=/var/log/pixel-agents.log)"
+
 exec "$@"

@@ -79,6 +79,21 @@ RUN corepack enable \
 RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/openclaw \
  && chmod +x /usr/local/bin/openclaw
 
+# ============================================================
+# Pixel Agents Dashboard — visualizer dos agentes OpenClaw
+# Sobe junto ao gateway via entrypoint, acessível por SSH tunnel.
+# ============================================================
+ARG PIXEL_AGENTS_REPO=https://github.com/jaffer1979/openclaw-pixel-agents-dashboard.git
+ARG PIXEL_AGENTS_REF=main
+
+RUN git clone --depth 1 --branch "${PIXEL_AGENTS_REF}" "${PIXEL_AGENTS_REPO}" /opt/pixel-agents-dashboard \
+ && cd /opt/pixel-agents-dashboard \
+ && npm install --no-audit --no-fund \
+ && npm run build
+
+# Template de config copiado pro volume no primeiro boot (entrypoint).
+COPY dashboard/dashboard.config.default.json /opt/pixel-agents-dashboard/dashboard.config.default.json
+
 # Middleware MCP que envelopa a CLI 'meta' como tools tipados para o openclaw.
 COPY middleware /app/middleware
 
