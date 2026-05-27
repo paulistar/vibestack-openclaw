@@ -7,3 +7,6 @@ node_modules/
 # O template versionado fica em config/openclaw.json.
 /openclaw.json
 /openclaw.json.bak*
+
+# Dados locais dos agentes OpenClaw (sessions, sandbox, configs por agente).
+/agency/
