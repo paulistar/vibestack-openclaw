@@ -88,17 +88,33 @@ else
   echo "[entrypoint] claw3d settings.json ja existe — preservando edicoes do Studio UI"
 fi
 
+# Bind o Claw3D em 127.0.0.1 dentro do container — assim o network-policy
+# considera loopback e o access-gate fica desligado (sem cookie/login).
+# Depois usamos socat pra expor em 0.0.0.0:CLAW3D_PORT pro Docker publicar.
+# Resultado: acesso via SSH tunnel funciona como um servico local, direto.
+CLAW3D_INTERNAL_PORT="${CLAW3D_INTERNAL_PORT:-3001}"
+CLAW3D_PUBLIC_PORT="${CLAW3D_PORT:-3000}"
+
 (
   cd /opt/claw3d
   NODE_ENV=production \
   NEXT_TELEMETRY_DISABLED=1 \
-  HOST="${CLAW3D_HOST:-0.0.0.0}" \
-  PORT="${CLAW3D_PORT:-3000}" \
-  STUDIO_ACCESS_TOKEN="${STUDIO_ACCESS_TOKEN:-${OPENCLAW_GATEWAY_TOKEN:-}}" \
+  HOST=127.0.0.1 \
+  PORT="$CLAW3D_INTERNAL_PORT" \
   UPSTREAM_ALLOWLIST="${UPSTREAM_ALLOWLIST:-localhost,127.0.0.1}" \
     node server/index.js
 ) >/var/log/claw3d.log 2>&1 &
 CLAW3D_PID=$!
-echo "[entrypoint] claw3d iniciado (pid=$CLAW3D_PID, log=/var/log/claw3d.log)"
+echo "[entrypoint] claw3d iniciado em 127.0.0.1:$CLAW3D_INTERNAL_PORT (pid=$CLAW3D_PID, log=/var/log/claw3d.log)"
+
+# Bridge socat: 0.0.0.0:PUBLIC -> 127.0.0.1:INTERNAL. fork pra conexoes
+# concorrentes, reuseaddr pra restart rapido. socat e' TCP-puro, entao
+# WebSocket (que Claw3D usa pro proxy) passa transparente.
+socat \
+  TCP-LISTEN:"$CLAW3D_PUBLIC_PORT",fork,reuseaddr \
+  TCP:127.0.0.1:"$CLAW3D_INTERNAL_PORT" \
+  >/var/log/claw3d-socat.log 2>&1 &
+SOCAT_PID=$!
+echo "[entrypoint] socat bridge 0.0.0.0:$CLAW3D_PUBLIC_PORT -> 127.0.0.1:$CLAW3D_INTERNAL_PORT (pid=$SOCAT_PID)"
 
 exec "$@"

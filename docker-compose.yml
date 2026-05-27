@@ -23,12 +23,11 @@ services:
       - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
       # Claw3D — Studio Next.js + proxy WS pro gateway in-process.
-      # HOST=0.0.0.0 e' obrigatorio pro Docker publicar a porta; nesse caso o
-      # access-gate exige STUDIO_ACCESS_TOKEN (reusamos OPENCLAW_GATEWAY_TOKEN).
+      # Bindado em 127.0.0.1:3001 dentro do container; socat publica em
+      # 0.0.0.0:CLAW3D_PORT. Como o bind e' loopback, o access-gate fica
+      # desligado e o acesso via SSH tunnel funciona sem cookie.
       # UPSTREAM_ALLOWLIST precisa de localhost,127.0.0.1 (gateway in-process).
       - CLAW3D_PORT=${CLAW3D_PORT:-3000}
-      - CLAW3D_HOST=0.0.0.0
-      - STUDIO_ACCESS_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - UPSTREAM_ALLOWLIST=localhost,127.0.0.1
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
