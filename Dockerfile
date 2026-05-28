@@ -6,7 +6,7 @@ ARG OPENCLAW_REF=main
 ENV HOME=/root
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd python3 python3-pip \
+ && apt-get install -y --no-install-recommends git ca-certificates curl socat zstd python3 python3-pip ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 # uv: instala Python 3.12 inline (bookworm so traz ate 3.11).
@@ -18,10 +18,11 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
 # Instala em venv isolado gerenciado por uv; binario fica em /root/.local/bin/meta.
 RUN uv tool install --python 3.12 meta-ads
 
-# Python SDK do MCP para o middleware customizado (middleware/meta_ads_cli_mcp.py).
+# Python SDK do MCP para os middlewares customizados (meta_ads_cli_mcp.py, media_editor_mcp.py).
 # Venv criado por uv vem sem pip — usamos `uv pip install` no venv ativo via VIRTUAL_ENV.
+# boto3 e' usado pelo media_editor_mcp.py como cliente S3-compatible do Backblaze B2.
 RUN uv venv --python 3.12 /opt/middleware-venv \
- && VIRTUAL_ENV=/opt/middleware-venv uv pip install --no-cache "mcp>=1.0"
+ && VIRTUAL_ENV=/opt/middleware-venv uv pip install --no-cache "mcp>=1.0" "boto3>=1.30"
 
 ENV PATH=/root/.local/bin:$PATH
 

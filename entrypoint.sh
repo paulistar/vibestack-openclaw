@@ -49,6 +49,13 @@ esac
 
 register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/meta_ads_cli_mcp.py\"],\"env\":{\"ACCESS_TOKEN\":\"${ACCESS_TOKEN:-}\",\"AD_ACCOUNT_ID\":\"${AD_ACCOUNT_ID:-}\",\"BUSINESS_ID\":\"${BUSINESS_ID:-}\"}}"
 
+# media-editor: ffmpeg envelopado em tools + Backblaze B2 (S3-compatible) como
+# storage canonico de seeds e derivacoes. Consumido pelo agente Criativo.
+if [ -z "${B2_BUCKET:-}" ] || [ -z "${B2_KEY_ID:-}" ] || [ -z "${B2_APP_KEY:-}" ]; then
+  echo "[entrypoint] AVISO: B2_BUCKET/B2_KEY_ID/B2_APP_KEY vazios — media-editor MCP vai recusar operacoes. Configure no .env."
+fi
+register_mcp media-editor "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/media_editor_mcp.py\"],\"env\":{\"B2_KEY_ID\":\"${B2_KEY_ID:-}\",\"B2_APP_KEY\":\"${B2_APP_KEY:-}\",\"B2_BUCKET\":\"${B2_BUCKET:-}\",\"B2_ENDPOINT_URL\":\"${B2_ENDPOINT_URL:-}\"}}"
+
 # Acrescente novos MCP servers aqui no mesmo padrao:
 # register_mcp outro-server '{"command":"...","args":[...]}'
 
