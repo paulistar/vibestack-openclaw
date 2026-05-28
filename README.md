@@ -14,6 +14,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 
 - [Arquitetura em uma frase](#arquitetura-em-uma-frase)
 - [Pré-requisitos](#pré-requisitos)
+- [Instalação rápida (Linux / Mac / Windows)](#instalação-rápida-linux--mac--windows)
 - [Tutorial completo do zero](#tutorial-completo-do-zero)
   - [Passo 1 — Provisionar a VPS](#passo-1--provisionar-a-vps)
   - [Passo 2 — SSH e setup inicial do servidor](#passo-2--ssh-e-setup-inicial-do-servidor)
@@ -53,6 +54,41 @@ O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, prop
 - (Opcional, pra Meta Ads) Conta no Meta Business Manager com permissão de admin.
 
 > Esse tutorial assume Hetzner CX22 (CPX21 ainda melhor). Funciona em qualquer outro provider — só ajuste o IP no exemplo.
+
+---
+
+## Instalação rápida (Linux / Mac / Windows)
+
+Pra quem só quer subir: o `install.sh` faz tudo de forma idempotente — verifica o Docker, **pergunta os valores do `.env`** (quando ele ainda não existe), gera os segredos, cria os diretórios de dados no SO certo e builda a imagem. Ele **para antes** do `up` (você sobe a stack manualmente).
+
+**Opção A — direto da web (clona sozinho):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ericorenato/vibestack-openclaw/main/install.sh | bash
+docker compose up -d   # rode de dentro da pasta vibestack-openclaw criada pelo instalador
+```
+
+O instalador clona o repo em `./vibestack-openclaw` (mude com `OPENCLAW_DIR=/caminho`) e se re-executa de lá. Como ele faz perguntas, lê as respostas do terminal (`/dev/tty`) mesmo vindo de um `curl | bash`. Requer o repositório **público** (o `raw.githubusercontent.com` e o `git clone` anônimo dependem disso).
+
+**Opção B — clonando você mesmo:**
+
+```bash
+git clone https://github.com/ericorenato/vibestack-openclaw.git
+cd vibestack-openclaw
+./install.sh          # no Windows: rode em Git Bash ou WSL
+docker compose up -d  # iniciar a stack (manual)
+```
+
+> Modo não-interativo (CI / sem terminal): exporte `NONINTERACTIVE=1` e o `.env` é criado só com defaults + segredos gerados (preencha Meta Ads / B2 editando o arquivo depois).
+
+O que o `install.sh` resolve automaticamente:
+
+- **Docker**: no Linux instala via `get.docker.com`; no Mac/Windows detecta e aponta o download do Docker Desktop.
+- **Volumes**: usa `~/.openclaw` e `~/.ollama` — funciona no Docker Desktop (Mac/Windows) sem mexer no File Sharing, e na VPS (`HOME=/root`) resolve pro mesmo `/root/.openclaw` de sempre. Isso elimina o erro `mounts denied: the path /root/.openclaw is not shared from the host`.
+- **`.env`**: copia de `.env.example` se faltar e gera `OPENCLAW_GATEWAY_TOKEN`/`GOG_KEYRING_PASSWORD` (não sobrescreve valores já preenchidos). Você ainda precisa preencher o `META_ACCESS_TOKEN` e os `B2_*` se for usar Meta Ads / media-editor — veja [Passo 5](#passo-5--opcional-gerar-o-token-da-meta-ads) e [Passo 6](#passo-6--configurar-env).
+- **CRLF**: normaliza o `entrypoint.sh` pra LF, evitando o erro `entrypoint not found` em checkouts feitos no Windows.
+
+Depois do `up`, siga o [Passo 8](#passo-8--configurar-o-openclaw-uma-vez-por-vps) (configurar OpenClaw) em diante. Se preferir entender cada etapa na mão, o tutorial abaixo cobre tudo sem o instalador.
 
 ---
 
@@ -165,8 +201,10 @@ openssl rand -hex 32   # roda outra pro keyring password
 
 ### Passo 7 — Build + Up
 
+> Atalho: `./install.sh` já faz o `mkdir` dos diretórios de dados e o `docker compose build` (parando antes do `up`). Se rodou o instalador, pule direto pro `docker compose up -d`.
+
 ```bash
-mkdir -p /root/.openclaw /root/.ollama
+mkdir -p /root/.openclaw /root/.ollama   # dispensável se usou ./install.sh
 
 docker compose build
 docker compose up -d
