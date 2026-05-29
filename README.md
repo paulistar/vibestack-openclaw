@@ -68,36 +68,111 @@ O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, prop
 
 ## Instalação rápida (Linux / Mac / Windows)
 
-Pra quem só quer subir: o `install.sh` faz tudo de forma idempotente — verifica o Docker, **pergunta os valores do `.env`** (quando ele ainda não existe), gera os segredos, cria os diretórios de dados no SO certo e builda a imagem. Ele **para antes** do `up` (você sobe a stack manualmente).
+Há **duas formas de instalar**. As duas chegam no mesmo resultado (imagem buildada + `.env` pronto + diretórios de dados criados). A diferença é **quem faz o trabalho**: o instalador (automático) ou você (manual). Escolha conforme o quanto quer entender/controlar cada etapa.
 
-**Opção A — direto da web (clona sozinho):**
+**Pré-requisito comum:** Docker rodando (Docker Desktop no Mac/Windows, Docker Engine no Linux/VPS). No Docker Desktop, reserve **memória suficiente** — o build do OpenClaw é pesado e cai com OOM (`exit 137` / `cannot allocate memory`) abaixo de ~8 GB. Ajuste em *Docker Desktop → Settings → Resources → Memory* (12 GB é confortável). Veja [Troubleshooting](#build-cai-com-exit-137).
+
+---
+
+### Forma 1 — Instalador automático (`install.sh`)
+
+O `install.sh` é **idempotente** (pode rodar de novo sem quebrar nada) e cuida de tudo. Em detalhe, ele:
+
+1. **Verifica/instala o Docker** — no Linux instala via `get.docker.com`; no Mac/Windows detecta e aponta o download do Docker Desktop.
+2. **Resolve os diretórios de dados pelo seu SO** — usa `~/.openclaw`, `~/.ollama` e `~/.hermes`. No Docker Desktop (Mac/Windows) isso funciona sem mexer no File Sharing; na VPS (`HOME=/root`) resolve pro mesmo `/root/.openclaw` de sempre. **É isso que evita o erro** `mounts denied: the path /root/.openclaw is not shared from the host`.
+3. **Cria/atualiza o `.env`** — copia de `.env.example` se faltar, **pergunta os valores no terminal** (porta, Meta Ads, B2…) na primeira vez, e grava os data dirs resolvidos no passo 2. Não sobrescreve valores que você já preencheu.
+4. **Gera os segredos** (se vazios) — `OPENCLAW_GATEWAY_TOKEN`, `GOG_KEYRING_PASSWORD` e `HERMES_API_SERVER_KEY`. Ao final, **exibe as chaves geradas**, dizendo onde ficam (no `.env`) e onde usar cada uma (ex.: a `HERMES_API_SERVER_KEY` é o Bearer token pra conectar um frontend na API do Hermes).
+5. **Cria os diretórios de dados** físicos (`mkdir -p`) no host.
+6. **Normaliza o `entrypoint.sh` pra LF** — evita o erro `entrypoint not found` em checkouts feitos no Windows.
+7. **Builda a imagem** (`docker compose build`) e **para antes do `up`** — você sobe a stack manualmente.
+
+Duas maneiras de chamá-lo:
+
+**1a — direto da web (o instalador clona o repo sozinho):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ericorenato/vibestack-openclaw/main/install.sh | bash
-docker compose up -d   # rode de dentro da pasta vibestack-openclaw criada pelo instalador
 ```
 
-O instalador clona o repo em `./vibestack-openclaw` (mude com `OPENCLAW_DIR=/caminho`) e se re-executa de lá. Como ele faz perguntas, lê as respostas do terminal (`/dev/tty`) mesmo vindo de um `curl | bash`. Requer o repositório **público** (o `raw.githubusercontent.com` e o `git clone` anônimo dependem disso).
+Ele clona o repo em `./vibestack-openclaw` (mude o destino com `OPENCLAW_DIR=/caminho`) e se re-executa de lá. Mesmo vindo de um `curl | bash`, lê suas respostas do terminal (`/dev/tty`). Requer o repositório **público**. Como ele cria um `.env` novo, você vai **digitar os tokens da Meta/B2 do zero**.
 
-**Opção B — clonando você mesmo:**
+**1b — clonando você mesmo (reaproveita um `.env` já existente):**
 
 ```bash
 git clone https://github.com/ericorenato/vibestack-openclaw.git
 cd vibestack-openclaw
 ./install.sh          # no Windows: rode em Git Bash ou WSL
-docker compose up -d  # iniciar a stack (manual)
 ```
 
-> Modo não-interativo (CI / sem terminal): exporte `NONINTERACTIVE=1` e o `.env` é criado só com defaults + segredos gerados (preencha Meta Ads / B2 editando o arquivo depois).
+Rodar o `./install.sh` numa pasta que **já tem** `.env` é a forma de **consertar** um `.env` herdado da VPS (com `OPENCLAW_DATA_DIR=/root/.openclaw`) — ele reescreve os data dirs pros caminhos do seu SO e preserva seus tokens.
 
-O que o `install.sh` resolve automaticamente:
+Depois de qualquer uma das duas:
 
-- **Docker**: no Linux instala via `get.docker.com`; no Mac/Windows detecta e aponta o download do Docker Desktop.
-- **Volumes**: usa `~/.openclaw` e `~/.ollama` — funciona no Docker Desktop (Mac/Windows) sem mexer no File Sharing, e na VPS (`HOME=/root`) resolve pro mesmo `/root/.openclaw` de sempre. Isso elimina o erro `mounts denied: the path /root/.openclaw is not shared from the host`.
-- **`.env`**: copia de `.env.example` se faltar e gera `OPENCLAW_GATEWAY_TOKEN`/`GOG_KEYRING_PASSWORD` (não sobrescreve valores já preenchidos). Você ainda precisa preencher o `META_ACCESS_TOKEN` e os `B2_*` se for usar Meta Ads / media-editor — veja [Passo 5](#passo-5--opcional-gerar-o-token-da-meta-ads) e [Passo 6](#passo-6--configurar-env).
-- **CRLF**: normaliza o `entrypoint.sh` pra LF, evitando o erro `entrypoint not found` em checkouts feitos no Windows.
+```bash
+docker compose up -d   # de dentro da pasta do projeto
+```
 
-Depois do `up`, siga o [Passo 8](#passo-8--configurar-o-openclaw-uma-vez-por-vps) (configurar OpenClaw) em diante. Se preferir entender cada etapa na mão, o tutorial abaixo cobre tudo sem o instalador.
+> **Modo não-interativo (CI / sem terminal):** exporte `NONINTERACTIVE=1` e o `.env` é criado só com defaults + segredos gerados (preencha Meta Ads / B2 editando o arquivo depois).
+
+---
+
+### Forma 2 — Instalação manual (você cria as pastas e o `.env`)
+
+Pra quem quer controle total ou entender cada parte. Faz exatamente o que o instalador faz, mas na mão. **No Mac/Windows os caminhos são no seu `$HOME`; na VPS são em `/root`** — não use `/root/...` no Mac, senão dá `mounts denied`.
+
+```bash
+# 1. Clone o repo e entre nele
+git clone https://github.com/ericorenato/vibestack-openclaw.git
+cd vibestack-openclaw
+
+# 2. Crie os diretórios de dados (volumes persistentes) no SEU SO.
+#    Mac/Windows:
+mkdir -p ~/.openclaw ~/.ollama ~/.hermes
+#    VPS (HOME=/root) — pule, ja' e' /root/.openclaw etc. (ou: mkdir -p /root/.openclaw /root/.ollama /root/.hermes)
+
+# 3. Crie o .env a partir do exemplo
+cp .env.example .env
+
+# 4. Gere os 3 segredos (rode 3x e cole cada um no .env)
+openssl rand -hex 32    # -> OPENCLAW_GATEWAY_TOKEN
+openssl rand -hex 32    # -> GOG_KEYRING_PASSWORD
+openssl rand -hex 32    # -> HERMES_API_SERVER_KEY
+```
+
+Agora **edite o `.env`** e ajuste:
+
+- **Data dirs (CRÍTICO no Mac)** — aponte pros caminhos que você criou no passo 2:
+  ```
+  OPENCLAW_DATA_DIR=/Users/SEU_USUARIO/.openclaw
+  OLLAMA_DATA_DIR=/Users/SEU_USUARIO/.ollama
+  HERMES_DATA_DIR=/Users/SEU_USUARIO/.hermes
+  ```
+  (Na VPS: `/root/.openclaw`, `/root/.ollama`, `/root/.hermes`.) Se deixar `/root/...` no Mac, o `docker compose up` falha com `mounts denied: the path /root/.hermes is not shared from the host`.
+- **Segredos** — cole os 3 valores gerados no passo 4 em `OPENCLAW_GATEWAY_TOKEN`, `GOG_KEYRING_PASSWORD` e `HERMES_API_SERVER_KEY`.
+- **Meta Ads / B2 (opcional)** — preencha `META_ACCESS_TOKEN` (+ `META_AD_ACCOUNT_ID`) e os `B2_*` se for usar as tools de Meta Ads / media-editor. Veja [Passo 5](#passo-5--opcional-gerar-o-token-da-meta-ads) e [Passo 6](#passo-6--configurar-env).
+
+```bash
+# 5. (Só Windows) normalize o entrypoint pra LF, se editou em editor Windows:
+#    tr -d '\r' < entrypoint.sh > entrypoint.lf && mv entrypoint.lf entrypoint.sh
+
+# 6. Builde a imagem
+docker compose build
+
+# 7. Suba a stack
+docker compose up -d
+```
+
+**Onde usar cada segredo depois de subir:**
+
+| Segredo                  | Onde usar                                                                 |
+|--------------------------|---------------------------------------------------------------------------|
+| `OPENCLAW_GATEWAY_TOKEN` | Login do gateway OpenClaw (UI em `:18789`) e do Claw3D Studio (`:3000`).   |
+| `HERMES_API_SERVER_KEY`  | API key / Bearer token pra conectar o **frontend** na API do Hermes (`http://127.0.0.1:8642/v1`). |
+| `GOG_KEYRING_PASSWORD`   | Uso interno (keyring do `gog` no container) — não vai em frontend.        |
+
+---
+
+Depois do `up` (em qualquer das duas formas), siga o [Passo 8](#passo-8--configurar-o-openclaw-uma-vez-por-vps) (configurar OpenClaw) em diante, e a seção [Hermes Agent](#hermes-agent-alternativa-ao-openclaw) pra configurar o provider do Hermes. Se preferir entender cada etapa na mão, o tutorial abaixo cobre tudo passo a passo.
 
 ---
 
