@@ -361,6 +361,26 @@ if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1
   else
     warn 'WA_BRIDGE_ALLOWED_NUMBERS vazio — QUALQUER numero podera conversar com o agente. Edite o .env pra restringir.'
   fi
+
+  # Proxy do WhatsApp (RECOMENDADO p/ evitar ban — Static Residential / IP fixo).
+  # Preenchido = o bridge cria/edita a instancia ja' atras do proxy. Vazio = sem proxy.
+  proxy_default='n'; [ -n "$(get_env_var .env EVOLUTION_PROXY_HOST)" ] && proxy_default='y'
+  if ask_yesno 'Vai usar proxy no WhatsApp (Static Residential / IP fixo)?' "$proxy_default"; then
+    warn 'Use IP FIXO (Static Residential). NAO use rotativo — quebra a sessao do WhatsApp Web.'
+    px_proto="$(ask 'Protocolo do proxy (http|socks5)' "$(get_env_var .env EVOLUTION_PROXY_PROTOCOL)")"; [ -z "$px_proto" ] && px_proto='http'
+    px_host="$(ask 'Proxy host' "$(get_env_var .env EVOLUTION_PROXY_HOST)")"
+    px_port="$(ask 'Proxy porta' "$(get_env_var .env EVOLUTION_PROXY_PORT)")"
+    px_user="$(ask 'Proxy usuario' "$(get_env_var .env EVOLUTION_PROXY_USERNAME)")"
+    px_pass="$(ask 'Proxy senha' "$(get_env_var .env EVOLUTION_PROXY_PASSWORD)")"
+    set_env_var .env EVOLUTION_PROXY_PROTOCOL "$px_proto"
+    set_env_var .env EVOLUTION_PROXY_HOST "$px_host"
+    set_env_var .env EVOLUTION_PROXY_PORT "$px_port"
+    set_env_var .env EVOLUTION_PROXY_USERNAME "$px_user"
+    set_env_var .env EVOLUTION_PROXY_PASSWORD "$px_pass"
+    info "Proxy configurado: $px_proto://$px_host:$px_port (o bridge aplica na instancia no boot)."
+  else
+    info 'Sem proxy no WhatsApp — preencha EVOLUTION_PROXY_* no .env depois se quiser.'
+  fi
 elif [ "$FRESH_ENV" = "1" ]; then
   warn 'Sem terminal interativo — .env criado com defaults. Edite-o pra preencher Meta Ads / B2 / WhatsApp.'
 fi

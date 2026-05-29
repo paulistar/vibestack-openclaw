@@ -276,13 +276,21 @@ def _evo_request(method: str, path: str, body: dict | None = None, admin: bool =
         return resp.status, (json.loads(raw) if raw else {})
 
 
-def _instance_exists() -> bool:
-    """True se a instancia (por nome) ja existe no Evolution."""
+def _get_instance() -> dict | None:
+    """Retorna o dict da instancia (por nome) — com id/proxy/connected — ou None."""
     _, out = _evo_request("GET", "/instance/all", admin=True)
     items = out.get("data") if isinstance(out, dict) else out
     if not isinstance(items, list):
-        return False
-    return any(isinstance(i, dict) and i.get("name") == EVOLUTION_INSTANCE for i in items)
+        return None
+    for i in items:
+        if isinstance(i, dict) and i.get("name") == EVOLUTION_INSTANCE:
+            return i
+    return None
+
+
+def _proxy_struct() -> dict:
+    """Corpo do proxy (SetProxyStruct / ProxyConfig) a partir do env."""
+    return {k: PROXY[k] for k in ("protocol", "host", "port", "username", "password")}
 
 
 def _provision() -> None:
@@ -297,21 +305,35 @@ def _provision() -> None:
         return
     for attempt in range(1, 31):
         try:
-            if _instance_exists():
-                _log(f"instancia '{EVOLUTION_INSTANCE}' ja existe — reaproveitando (nao recrio).")
-            else:
+            inst = _get_instance()
+            if inst is None:
                 # O CreateStruct do Evolution NAO aceita 'webhook' (so name/token/proxy);
-                # o webhook e' definido no connect (webhookUrl).
+                # o webhook e' definido no connect (webhookUrl). O proxy SIM vai no create.
                 body: dict = {"name": EVOLUTION_INSTANCE, "token": EVOLUTION_INSTANCE_TOKEN}
                 if PROXY_OK:
-                    body["proxy"] = PROXY
+                    body["proxy"] = _proxy_struct()
                 _evo_request("POST", "/instance/create", body=body, admin=True)
                 _log(f"instancia '{EVOLUTION_INSTANCE}' criada (proxy={'sim' if PROXY_OK else 'nao'}).")
+            else:
+                _log(f"instancia '{EVOLUTION_INSTANCE}' ja existe — reaproveitando (nao recrio).")
+                # Aplica o proxy numa instancia que ainda nao tem (edita via POST /instance/proxy/<id>).
+                if PROXY_OK and not str(inst.get("proxy") or "").strip():
+                    iid = inst.get("id")
+                    if iid:
+                        try:
+                            _evo_request("POST", f"/instance/proxy/{iid}", body=_proxy_struct(), admin=True)
+                            _log(f"proxy aplicado na instancia existente (host={PROXY['host']}). Reconectando p/ valer...")
+                            try:
+                                _evo_request("POST", "/instance/reconnect", body={})
+                            except urllib.error.HTTPError:
+                                pass
+                        except urllib.error.HTTPError as e:
+                            _log(f"falha ao aplicar proxy (HTTP {e.code}): {e.read()[:120]!r}")
             # webhook + eventos no CONNECT (idempotente — reaplica mesmo se a instancia ja existia).
             try:
                 _evo_request("POST", "/instance/connect",
                              body={"webhookUrl": PUBLIC_WEBHOOK_URL, "subscribe": ["MESSAGE"]})
-                _log(f"connect ok — webhook={PUBLIC_WEBHOOK_URL}, eventos=[MESSAGE].")
+                _log(f"connect ok — webhook={PUBLIC_WEBHOOK_URL}, eventos=[MESSAGE], proxy={'sim' if PROXY_OK else 'nao'}.")
             except urllib.error.HTTPError as e:
                 _log(f"connect HTTP {e.code} (ok se ja conectado): {e.read()[:120]!r}")
             try:
