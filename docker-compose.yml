@@ -28,6 +28,11 @@ services:
       # As tools (meta-ads/media-editor) reusam as vars Meta/B2 ja definidas acima.
       - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-}
       - HERMES_API_PORT=${HERMES_API_PORT:-8642}
+      # O api_server (e demais canais) passa pela autorizacao de usuario do
+      # gateway. Sem allowlist o default e' NEGAR (erro "not authorized"). Como
+      # quem fala pelo WhatsApp ja' e' filtrado pelo bridge (WA_BRIDGE_ALLOWED_NUMBERS),
+      # liberamos o gateway. Controle real do canal = WA_BRIDGE_ALLOWED_NUMBERS.
+      - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
       # Dashboard web do Hermes (pagina de gestao/chat) — porta separada da API.
       - HERMES_WEB_PORT=${HERMES_WEB_PORT:-9119}
       # WhatsApp via Evolution Go — o middleware MCP alcanca a API pelo DNS de
