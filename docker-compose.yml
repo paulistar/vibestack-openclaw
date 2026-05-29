@@ -81,15 +81,19 @@ services:
   # A API so' e' publicada em loopback no host (Manager/QR via SSH tunnel).
   # ============================================================
   postgres:
-    image: postgres:16
+    # pgvector/pgvector = Postgres + extensao 'vector' pre-instalada (superset do
+    # postgres oficial). Os exemplos oficiais do Evolution Go usam postgres:15-alpine
+    # SEM pgvector; deixamos pgvector-ready por precaucao (risco zero). Pra voltar
+    # ao plano puro, troque por 'postgres:16' e remova os CREATE EXTENSION do init.
+    image: ${EVOLUTION_PG_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      # POSTGRES_DB cria 'evogo_auth'; o init SQL cria 'evogo_users' tambem.
-      - POSTGRES_DB=evogo_auth
+      # init SQL cria evogo_auth/evogo_users e habilita a extensao 'vector' em cada um.
+      - POSTGRES_DB=postgres
     volumes:
       - ${POSTGRES_DATA_DIR:-/root/.evogo-pg}:/var/lib/postgresql/data
-      # Cria os dois bancos que o Evolution Go espera no primeiro init.
+      # Cria os dois bancos + extensao vector no primeiro init (volume vazio).
       - ./postgres/init-evolution-dbs.sql:/docker-entrypoint-initdb.d/init-evolution-dbs.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
