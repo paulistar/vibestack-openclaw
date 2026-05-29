@@ -612,6 +612,8 @@ e Ollama (11434):
 3. **Sobe o `hermes dashboard`** em background na 9119, com `--insecure` (sem
    auth-gate) — seguro porque a porta só é publicada em loopback no host, acessível via
    SSH tunnel na VPS (mesmo modelo do Claw3D). A UI já vem pré-buildada na imagem.
+   Sobe com `--tui`, que **habilita a aba "Chat"** embutida (sem ela o dashboard só
+   mostra config/sessões, sem chat ao vivo).
 
 > O provider/modelo **não** é configurado pelo build (decisão de projeto). Igual ao
 > OpenClaw, você configura depois — veja abaixo.

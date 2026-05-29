@@ -228,11 +228,13 @@ fi
 # 127.0.0.1 no host (acesso via SSH tunnel na VPS), seguimos o mesmo modelo
 # loopback-sem-gate do Claw3D. Sem --skip-build: usa a UI ja' pre-buildada na
 # imagem (o helper do Hermes pula o rebuild quando nao e' necessario).
+# --tui: habilita a aba "Chat" embutida na UI (PTY que spawna `hermes --tui`);
+# sem ela o dashboard so' mostra config/sessoes, sem chat ao vivo.
 (
   HERMES_HOME="$HERMES_HOME" \
-    hermes dashboard --host 0.0.0.0 --port "${HERMES_WEB_PORT:-9119}" --insecure --no-open
+    hermes dashboard --host 0.0.0.0 --port "${HERMES_WEB_PORT:-9119}" --insecure --no-open --tui
 ) >/var/log/hermes-web.log 2>&1 &
 HERMES_WEB_PID=$!
-echo "[entrypoint] hermes dashboard iniciado em 0.0.0.0:${HERMES_WEB_PORT:-9119} (pid=$HERMES_WEB_PID, log=/var/log/hermes-web.log)"
+echo "[entrypoint] hermes dashboard iniciado em 0.0.0.0:${HERMES_WEB_PORT:-9119} (pid=$HERMES_WEB_PID, chat-tab=on, log=/var/log/hermes-web.log)"
 
 exec "$@"
