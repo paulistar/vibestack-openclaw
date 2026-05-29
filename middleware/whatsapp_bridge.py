@@ -31,18 +31,23 @@ Env:
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# Qual agente responde o canal: "hermes" (HTTP api_server) ou "openclaw" (CLI).
+AGENT = os.environ.get("WA_BRIDGE_AGENT", "hermes").strip().lower()
 PORT = int(os.environ.get("WA_BRIDGE_PORT", "8765"))
 UPSTREAM = os.environ.get("WA_BRIDGE_UPSTREAM", "http://127.0.0.1:8642").rstrip("/")
 UPSTREAM_KEY = os.environ.get("WA_BRIDGE_UPSTREAM_KEY", "")
 MODEL = os.environ.get("WA_BRIDGE_MODEL", "hermes-agent")
 SESSION_PREFIX = os.environ.get("WA_BRIDGE_SESSION_PREFIX", "wa")
 UPSTREAM_TIMEOUT = int(os.environ.get("WA_BRIDGE_UPSTREAM_TIMEOUT", "300"))
+# OpenClaw: agente especifico (binding) opcional pra rota desse canal.
+OPENCLAW_AGENT_ID = os.environ.get("WA_BRIDGE_OPENCLAW_AGENT", "").strip()
 EVOLUTION_BASE_URL = os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080").rstrip("/")
 EVOLUTION_INSTANCE_TOKEN = os.environ.get("EVOLUTION_INSTANCE_TOKEN", "")
 
@@ -112,8 +117,8 @@ def _extract(data: dict) -> tuple[str, str, str] | None:
     return number, str(text), msg_id
 
 
-def _ask_agent(number: str, text: str) -> str:
-    """Manda o texto pro agente (Hermes api_server) com sessão por contato; retorna a resposta."""
+def _ask_hermes(number: str, text: str) -> str:
+    """Hermes: HTTP /v1/chat/completions, sessão por contato (X-Hermes-Session-Id)."""
     if not UPSTREAM_KEY:
         return "(bridge sem WA_BRIDGE_UPSTREAM_KEY configurada)"
     body = json.dumps({
@@ -128,7 +133,6 @@ def _ask_agent(number: str, text: str) -> str:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {UPSTREAM_KEY}",
-            # Continuidade de conversa por número (api_server: X-Hermes-Session-Id).
             "X-Hermes-Session-Id": f"{SESSION_PREFIX}:{number}",
         },
     )
@@ -137,7 +141,45 @@ def _ask_agent(number: str, text: str) -> str:
     try:
         return out["choices"][0]["message"]["content"] or "(resposta vazia)"
     except (KeyError, IndexError, TypeError):
-        return "(nao consegui interpretar a resposta do agente)"
+        return "(nao consegui interpretar a resposta do Hermes)"
+
+
+def _ask_openclaw(number: str, text: str) -> str:
+    """OpenClaw: one-shot `openclaw agent --message ... --to +<num> --json`.
+
+    --to deriva a sessão pelo número (continuidade por contato). SEM --deliver:
+    o OpenClaw só DEVOLVE a resposta (a gente envia pelo Evolution). --json dá
+    saída estruturada; parseamos o texto da resposta de forma defensiva.
+    """
+    cmd = ["openclaw", "agent", "--message", text, "--to", f"+{number}", "--json"]
+    if OPENCLAW_AGENT_ID:
+        cmd += ["--agent", OPENCLAW_AGENT_ID]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=UPSTREAM_TIMEOUT, check=False)
+    if r.returncode != 0:
+        return f"(openclaw agent falhou: {(r.stderr or r.stdout).strip()[:200]})"
+    out_raw = r.stdout.strip()
+    try:
+        out = json.loads(out_raw)
+    except json.JSONDecodeError:
+        return out_raw or "(resposta vazia do openclaw)"
+    # Procura o texto da resposta em chaves comuns do --json.
+    for k in ("reply", "text", "message", "content", "response", "output", "finalText"):
+        v = out.get(k) if isinstance(out, dict) else None
+        if isinstance(v, str) and v.strip():
+            return v
+        if isinstance(v, dict):
+            for kk in ("text", "content", "message"):
+                vv = v.get(kk)
+                if isinstance(vv, str) and vv.strip():
+                    return vv
+    return out_raw or "(nao consegui interpretar a resposta do openclaw)"
+
+
+def _ask_agent(number: str, text: str) -> str:
+    """Despacha pro agente configurado (WA_BRIDGE_AGENT)."""
+    if AGENT == "openclaw":
+        return _ask_openclaw(number, text)
+    return _ask_hermes(number, text)
 
 
 def _send_whatsapp(number: str, text: str) -> None:
@@ -210,7 +252,8 @@ def main() -> None:
         _log("AVISO: EVOLUTION_INSTANCE_TOKEN vazio — nao vou conseguir responder no WhatsApp.")
     if not ALLOWED:
         _log("AVISO: WA_BRIDGE_ALLOWED_NUMBERS vazio — QUALQUER numero que mandar msg fala com o agente.")
-    _log(f"escutando em 0.0.0.0:{PORT} (webhook POST /webhook) -> agente {UPSTREAM} -> {EVOLUTION_BASE_URL}")
+    dest = f"openclaw CLI (agent={OPENCLAW_AGENT_ID or 'default'})" if AGENT == "openclaw" else f"hermes {UPSTREAM}"
+    _log(f"escutando em 0.0.0.0:{PORT} (webhook POST /webhook) -> {dest} -> resposta via {EVOLUTION_BASE_URL}")
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()

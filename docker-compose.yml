@@ -37,9 +37,12 @@ services:
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
       - EVOLUTION_INSTANCE_TOKEN=${EVOLUTION_INSTANCE_TOKEN:-}
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
-      # Bridge inbound do WhatsApp (webhook do Evolution -> Hermes -> resposta).
-      # WA_BRIDGE_ALLOWED_NUMBERS: CSV de numeros que podem falar com o agente
-      # (vazio = qualquer um). Recomendado preencher com o(s) seu(s) numero(s).
+      # Bridge inbound do WhatsApp (webhook do Evolution -> agente -> resposta).
+      # WA_BRIDGE_AGENT: quem responde o canal — 'hermes' (api_server) ou 'openclaw'
+      # (CLI `openclaw agent`). WA_BRIDGE_ALLOWED_NUMBERS: CSV de numeros que podem
+      # falar com o agente (vazio = qualquer um). Recomendado preencher.
+      - WA_BRIDGE_AGENT=${WA_BRIDGE_AGENT:-hermes}
+      - WA_BRIDGE_OPENCLAW_AGENT=${WA_BRIDGE_OPENCLAW_AGENT:-}
       - WA_BRIDGE_PORT=${WA_BRIDGE_PORT:-8765}
       - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
     volumes:

@@ -212,23 +212,29 @@ echo "[entrypoint] socat bridge 0.0.0.0:$HERMES_WEB_PUBLIC_PORT -> 127.0.0.1:$HE
 # Hermes (api_server na 8642), e a resposta volta pelo /send/text do Evolution.
 # Escuta em 0.0.0.0:WA_BRIDGE_PORT (so' rede interna do compose); o evolution-go
 # aponta o WEBHOOK_URL pra http://openclaw-vibestack:<porta>/webhook.
-# Sobe so' se houver como responder (token da instancia) e como falar com o
-# agente (API_SERVER_KEY = HERMES_API_SERVER_KEY).
-if [ -n "${EVOLUTION_INSTANCE_TOKEN:-}" ] && [ -n "${API_SERVER_KEY:-}" ]; then
+# O agente que responde e' escolhido por WA_BRIDGE_AGENT (hermes|openclaw):
+#  - hermes  -> precisa de API_SERVER_KEY (HTTP no api_server).
+#  - openclaw-> usa a CLI `openclaw agent` (nao precisa de key).
+# Sobe se houver como responder no WhatsApp (token da instancia) e, no modo
+# hermes, a key do api_server. No modo openclaw basta o token da instancia.
+WA_BRIDGE_AGENT="${WA_BRIDGE_AGENT:-hermes}"
+if [ -n "${EVOLUTION_INSTANCE_TOKEN:-}" ] && { [ "$WA_BRIDGE_AGENT" = "openclaw" ] || [ -n "${API_SERVER_KEY:-}" ]; }; then
   (
+    WA_BRIDGE_AGENT="$WA_BRIDGE_AGENT" \
     WA_BRIDGE_PORT="${WA_BRIDGE_PORT:-8765}" \
     WA_BRIDGE_UPSTREAM="${WA_BRIDGE_UPSTREAM:-http://127.0.0.1:${HERMES_API_PORT:-8642}}" \
-    WA_BRIDGE_UPSTREAM_KEY="${API_SERVER_KEY}" \
+    WA_BRIDGE_UPSTREAM_KEY="${API_SERVER_KEY:-}" \
     WA_BRIDGE_MODEL="${WA_BRIDGE_MODEL:-hermes-agent}" \
+    WA_BRIDGE_OPENCLAW_AGENT="${WA_BRIDGE_OPENCLAW_AGENT:-}" \
     WA_BRIDGE_ALLOWED_NUMBERS="${WA_BRIDGE_ALLOWED_NUMBERS:-}" \
     EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
     EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN}" \
       /opt/middleware-venv/bin/python /app/middleware/whatsapp_bridge.py
   ) >/var/log/whatsapp-bridge.log 2>&1 &
   WA_BRIDGE_PID=$!
-  echo "[entrypoint] whatsapp bridge iniciado em 0.0.0.0:${WA_BRIDGE_PORT:-8765} (pid=$WA_BRIDGE_PID, log=/var/log/whatsapp-bridge.log)"
+  echo "[entrypoint] whatsapp bridge iniciado em 0.0.0.0:${WA_BRIDGE_PORT:-8765} (agente=$WA_BRIDGE_AGENT, pid=$WA_BRIDGE_PID, log=/var/log/whatsapp-bridge.log)"
 else
-  echo "[entrypoint] whatsapp bridge NAO subiu (faltou EVOLUTION_INSTANCE_TOKEN e/ou API_SERVER_KEY) — canal inbound desligado, envio via MCP segue ok."
+  echo "[entrypoint] whatsapp bridge NAO subiu (faltou EVOLUTION_INSTANCE_TOKEN, ou API_SERVER_KEY no modo hermes) — canal inbound desligado, envio via MCP segue ok."
 fi
 
 exec "$@"

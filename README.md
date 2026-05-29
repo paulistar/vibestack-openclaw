@@ -703,7 +703,7 @@ Roda como **serviço separado** no `docker-compose` (imagem `evoapicloud/evoluti
 
 ```
 WhatsApp → Evolution Go (evento "Message") --webhook--> bridge (porta 8765, interna)
-        → Hermes api_server (/v1/chat/completions, sessão por número)
+        → agente escolhido (Hermes api_server  OU  openclaw agent), sessão por número
         → Evolution Go (/send/text) → WhatsApp
 ```
 
@@ -712,8 +712,12 @@ O `evolution-go` posta os eventos no `WEBHOOK_URL=http://openclaw-vibestack:8765
 suas próprias, grupos e status), mantém **uma sessão Hermes por contato** (`X-Hermes-Session-Id`),
 responde 200 na hora (o agente pode demorar com tool calls) e processa em background.
 
-> **Quem responde:** o **Hermes** (api_server na 8642). É o agente do "canal". O `WA_BRIDGE_ALLOWED_NUMBERS`
-> restringe quem pode falar com ele (CSV de números; **vazio = qualquer um** — recomendado preencher).
+> **Quem responde (escolha do aluno):** `WA_BRIDGE_AGENT=hermes|openclaw`.
+> - `hermes` → HTTP no api_server (`/v1/chat/completions`, sessão por número).
+> - `openclaw` → CLI `openclaw agent --message ... --to +<número> --json` (sessão por número; `WA_BRIDGE_OPENCLAW_AGENT` opcional escolhe o binding). Não usa `--deliver` — o bridge é quem envia pelo Evolution.
+>
+> Troque o agente no `.env` e reinicie. O `WA_BRIDGE_ALLOWED_NUMBERS` (CSV; **vazio = qualquer um**)
+> restringe quem pode falar com o agente — recomendado preencher.
 
 **Auth (confirmado no código do Evolution):** header `apikey`. A `EVOLUTION_API_KEY` (global) é
 de admin (criar instância); cada instância tem seu próprio token (`EVOLUTION_INSTANCE_TOKEN`,
