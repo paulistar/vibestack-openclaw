@@ -56,73 +56,17 @@ if [ -z "${B2_BUCKET:-}" ] || [ -z "${B2_KEY_ID:-}" ] || [ -z "${B2_APP_KEY:-}" 
 fi
 register_mcp media-editor "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/media_editor_mcp.py\"],\"env\":{\"B2_KEY_ID\":\"${B2_KEY_ID:-}\",\"B2_APP_KEY\":\"${B2_APP_KEY:-}\",\"B2_BUCKET\":\"${B2_BUCKET:-}\",\"B2_ENDPOINT_URL\":\"${B2_ENDPOINT_URL:-}\"}}"
 
+# whatsapp: envia mensagens via Evolution Go (whatsmeow), que roda como servico
+# separado no compose. O middleware alcanca a API em http://evolution-go:8080
+# (DNS de servico do compose). EVOLUTION_API_KEY = global (admin/create);
+# EVOLUTION_INSTANCE_TOKEN = token da instancia (send/qr/status).
+if [ -z "${EVOLUTION_API_KEY:-}" ]; then
+  echo "[entrypoint] AVISO: EVOLUTION_API_KEY vazio — whatsapp MCP vai falhar. Configure no .env."
+fi
+register_mcp whatsapp "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/whatsapp_evolution_mcp.py\"],\"env\":{\"EVOLUTION_BASE_URL\":\"${EVOLUTION_BASE_URL:-http://evolution-go:8080}\",\"EVOLUTION_API_KEY\":\"${EVOLUTION_API_KEY:-}\",\"EVOLUTION_INSTANCE_TOKEN\":\"${EVOLUTION_INSTANCE_TOKEN:-}\",\"EVOLUTION_INSTANCE\":\"${EVOLUTION_INSTANCE:-default}\"}}"
+
 # Acrescente novos MCP servers aqui no mesmo padrao:
 # register_mcp outro-server '{"command":"...","args":[...]}'
-
-# --- Claw3D em background -------------------------------------------------
-# Visualizador 3D dos agentes OpenClaw. server/index.js sobe o Next.js +
-# proxy WebSocket pro gateway. Browser conecta same-origin via /api/gateway/ws.
-#
-# O modulo studio-settings le gateway URL/token de:
-#   1. /root/.openclaw/claw3d/settings.json  (preferido — editavel pelo Studio UI)
-#   2. /root/.openclaw/openclaw.json -> gateway.auth.token  (apenas se token e' string)
-#
-# Como nosso openclaw.json tem token={"source":"env",...} (nao-string), o
-# fallback falha. Bootstrap: gera settings.json APENAS no primeiro boot, com
-# token resolvido do env. Depois disso, deixa o Studio UI ser a fonte da
-# verdade — edicoes feitas na interface persistem entre restarts/rebuilds.
-# Pra regenerar do env (ex: token rotacionado): rm settings.json e restart.
-CLAW3D_DIR=/root/.openclaw/claw3d
-mkdir -p "$CLAW3D_DIR"
-
-if [ -z "${OPENCLAW_GATEWAY_TOKEN:-}" ]; then
-  echo "[entrypoint] AVISO: OPENCLAW_GATEWAY_TOKEN vazio — Claw3D Studio nao vai autenticar no gateway."
-fi
-
-if [ ! -f "$CLAW3D_DIR/settings.json" ]; then
-  cat > "$CLAW3D_DIR/settings.json" <<EOF
-{
-  "gateway": {
-    "url": "ws://localhost:${OPENCLAW_GATEWAY_PORT:-18789}",
-    "token": "${OPENCLAW_GATEWAY_TOKEN:-}",
-    "adapterType": "openclaw"
-  }
-}
-EOF
-  chmod 600 "$CLAW3D_DIR/settings.json"
-  echo "[entrypoint] claw3d settings.json criado em $CLAW3D_DIR (primeiro boot)"
-else
-  echo "[entrypoint] claw3d settings.json ja existe — preservando edicoes do Studio UI"
-fi
-
-# Bind o Claw3D em 127.0.0.1 dentro do container — assim o network-policy
-# considera loopback e o access-gate fica desligado (sem cookie/login).
-# Depois usamos socat pra expor em 0.0.0.0:CLAW3D_PORT pro Docker publicar.
-# Resultado: acesso via SSH tunnel funciona como um servico local, direto.
-CLAW3D_INTERNAL_PORT="${CLAW3D_INTERNAL_PORT:-3001}"
-CLAW3D_PUBLIC_PORT="${CLAW3D_PORT:-3000}"
-
-(
-  cd /opt/claw3d
-  NODE_ENV=production \
-  NEXT_TELEMETRY_DISABLED=1 \
-  HOST=127.0.0.1 \
-  PORT="$CLAW3D_INTERNAL_PORT" \
-  UPSTREAM_ALLOWLIST="${UPSTREAM_ALLOWLIST:-localhost,127.0.0.1}" \
-    node server/index.js
-) >/var/log/claw3d.log 2>&1 &
-CLAW3D_PID=$!
-echo "[entrypoint] claw3d iniciado em 127.0.0.1:$CLAW3D_INTERNAL_PORT (pid=$CLAW3D_PID, log=/var/log/claw3d.log)"
-
-# Bridge socat: 0.0.0.0:PUBLIC -> 127.0.0.1:INTERNAL. fork pra conexoes
-# concorrentes, reuseaddr pra restart rapido. socat e' TCP-puro, entao
-# WebSocket (que Claw3D usa pro proxy) passa transparente.
-socat \
-  TCP-LISTEN:"$CLAW3D_PUBLIC_PORT",fork,reuseaddr \
-  TCP:127.0.0.1:"$CLAW3D_INTERNAL_PORT" \
-  >/var/log/claw3d-socat.log 2>&1 &
-SOCAT_PID=$!
-echo "[entrypoint] socat bridge 0.0.0.0:$CLAW3D_PUBLIC_PORT -> 127.0.0.1:$CLAW3D_INTERNAL_PORT (pid=$SOCAT_PID)"
 
 # --- Hermes Agent (alternativa ao OpenClaw, no mesmo container) -----------
 # Hermes roda ao lado do OpenClaw: api_server OpenAI-compatible na 8642,
@@ -132,7 +76,7 @@ echo "[entrypoint] socat bridge 0.0.0.0:$CLAW3D_PUBLIC_PORT -> 127.0.0.1:$CLAW3D
 HERMES_HOME="${HOME:-/root}/.hermes"
 mkdir -p "$HERMES_HOME"
 
-# Registro MCP: faz um merge idempotente em config.yaml, gravando so as duas
+# Registro MCP: faz um merge idempotente em config.yaml, gravando so as
 # entradas mcp_servers e preservando qualquer outra chave (model, provider,
 # skills...) que o usuario tenha editado. Sem campo 'tools'/'enabled' o Hermes
 # habilita todas as tools do server (tools/mcp_tool.py: default enabled=True,
@@ -145,6 +89,10 @@ B2_KEY_ID="${B2_KEY_ID:-}" \
 B2_APP_KEY="${B2_APP_KEY:-}" \
 B2_BUCKET="${B2_BUCKET:-}" \
 B2_ENDPOINT_URL="${B2_ENDPOINT_URL:-}" \
+EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
+EVOLUTION_API_KEY="${EVOLUTION_API_KEY:-}" \
+EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN:-}" \
+EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-default}" \
 /opt/hermes-agent/venv/bin/python - <<'PYEOF'
 import os, sys
 from pathlib import Path
@@ -193,6 +141,16 @@ servers["media-editor"] = {
         "B2_ENDPOINT_URL": os.environ.get("B2_ENDPOINT_URL", ""),
     },
 }
+servers["whatsapp"] = {
+    "command": PY,
+    "args": ["/app/middleware/whatsapp_evolution_mcp.py"],
+    "env": {
+        "EVOLUTION_BASE_URL": os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080"),
+        "EVOLUTION_API_KEY": os.environ.get("EVOLUTION_API_KEY", ""),
+        "EVOLUTION_INSTANCE_TOKEN": os.environ.get("EVOLUTION_INSTANCE_TOKEN", ""),
+        "EVOLUTION_INSTANCE": os.environ.get("EVOLUTION_INSTANCE", "default"),
+    },
+}
 
 tmp = cfg_path.with_suffix(".yaml.tmp")
 tmp.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
@@ -201,13 +159,13 @@ try:
     cfg_path.chmod(0o600)
 except OSError:
     pass
-print(f"[entrypoint] hermes mcp 'meta-ads' e 'media-editor' registrados em {cfg_path}")
+print(f"[entrypoint] hermes mcp 'meta-ads', 'media-editor' e 'whatsapp' registrados em {cfg_path}")
 PYEOF
 
 # Sobe o gateway do Hermes em background. A unica plataforma que sobe sem
 # token e' o api_server (is_configured=True), e ele EXIGE API_SERVER_KEY pra
 # iniciar. Bind interno 0.0.0.0 (Docker publica em loopback no host); a auth
-# e' garantida pela API_SERVER_KEY, entao nao precisa de socat como o Claw3D.
+# e' garantida pela API_SERVER_KEY, entao nao precisa de socat (ao contrario do dashboard).
 if [ -z "${API_SERVER_KEY:-}" ]; then
   echo "[entrypoint] AVISO: API_SERVER_KEY vazio — Hermes api_server NAO vai subir. Defina HERMES_API_SERVER_KEY no .env."
 else
@@ -229,7 +187,7 @@ fi
 # aba Chat e' rejeitado ("WebSocket connection failed"). Em loopback o servidor
 # trata a conexao como local/confiavel e o WS passa (a pagina usa o token
 # embutido — sem precisar de --insecure). Publicamos via socat (TCP-puro, o
-# WebSocket passa transparente). Mesmo padrao do Claw3D logo acima.
+# WebSocket passa transparente).
 #
 # --tui: habilita a aba "Chat" embutida (PTY que spawna `hermes --tui`); sem ela
 # o dashboard so' mostra config/sessoes. O ui-tui ja' vem pre-buildado na imagem.
@@ -248,5 +206,29 @@ socat \
   >/var/log/hermes-web-socat.log 2>&1 &
 HERMES_WEB_SOCAT_PID=$!
 echo "[entrypoint] socat bridge 0.0.0.0:$HERMES_WEB_PUBLIC_PORT -> 127.0.0.1:$HERMES_WEB_INTERNAL_PORT (pid=$HERMES_WEB_SOCAT_PID)"
+
+# --- Bridge inbound do WhatsApp (Evolution Go webhook -> Hermes -> resposta) ---
+# Fecha o "canal": mensagens recebidas no WhatsApp viram prompts pro agente
+# Hermes (api_server na 8642), e a resposta volta pelo /send/text do Evolution.
+# Escuta em 0.0.0.0:WA_BRIDGE_PORT (so' rede interna do compose); o evolution-go
+# aponta o WEBHOOK_URL pra http://openclaw-vibestack:<porta>/webhook.
+# Sobe so' se houver como responder (token da instancia) e como falar com o
+# agente (API_SERVER_KEY = HERMES_API_SERVER_KEY).
+if [ -n "${EVOLUTION_INSTANCE_TOKEN:-}" ] && [ -n "${API_SERVER_KEY:-}" ]; then
+  (
+    WA_BRIDGE_PORT="${WA_BRIDGE_PORT:-8765}" \
+    WA_BRIDGE_UPSTREAM="${WA_BRIDGE_UPSTREAM:-http://127.0.0.1:${HERMES_API_PORT:-8642}}" \
+    WA_BRIDGE_UPSTREAM_KEY="${API_SERVER_KEY}" \
+    WA_BRIDGE_MODEL="${WA_BRIDGE_MODEL:-hermes-agent}" \
+    WA_BRIDGE_ALLOWED_NUMBERS="${WA_BRIDGE_ALLOWED_NUMBERS:-}" \
+    EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
+    EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN}" \
+      /opt/middleware-venv/bin/python /app/middleware/whatsapp_bridge.py
+  ) >/var/log/whatsapp-bridge.log 2>&1 &
+  WA_BRIDGE_PID=$!
+  echo "[entrypoint] whatsapp bridge iniciado em 0.0.0.0:${WA_BRIDGE_PORT:-8765} (pid=$WA_BRIDGE_PID, log=/var/log/whatsapp-bridge.log)"
+else
+  echo "[entrypoint] whatsapp bridge NAO subiu (faltou EVOLUTION_INSTANCE_TOKEN e/ou API_SERVER_KEY) — canal inbound desligado, envio via MCP segue ok."
+fi
 
 exec "$@"

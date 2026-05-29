@@ -81,35 +81,6 @@ RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/local/bin/ope
  && chmod +x /usr/local/bin/openclaw
 
 # ============================================================
-# Claw3D — visualizador 3D dos agentes OpenClaw (Next.js + Three.js).
-# Roda como custom server (server/index.js) e proxia WebSocket pro
-# gateway OpenClaw in-process. Sobe via entrypoint em background.
-# ============================================================
-ARG CLAW3D_REPO=https://github.com/iamlukethedev/Claw3D.git
-ARG CLAW3D_REF=main
-
-# Build-time gateway URL — embedded no bundle do browser via NEXT_PUBLIC_*.
-# O server tem proxy em /api/gateway/ws, entao o browser usa same-origin;
-# esse valor e' so o default que aparece nas configs do Studio.
-ARG CLAW3D_BUILD_GATEWAY_URL=ws://localhost:18789
-
-RUN git clone --depth 1 --branch "${CLAW3D_REF}" "${CLAW3D_REPO}" /opt/claw3d \
- && cd /opt/claw3d \
- # Patch: Claw3D hardcoda min/maxProtocol=3 no GatewayBrowserClient e
- # nodeGatewayClient. O OpenClaw main exige v4 desde 2026.5.12. Subimos
- # o range pra 4 — Claw3D ainda nao ofereceu update upstream entao adaptamos
- # aqui. Confere se os arquivos existem antes pra falhar barulhento em rebase.
- && grep -q 'minProtocol: 3' src/lib/gateway/openclaw/GatewayBrowserClient.ts \
- && grep -q 'minProtocol: 3' src/lib/gateway/nodeGatewayClient.ts \
- && sed -i 's/minProtocol: 3,/minProtocol: 4,/g; s/maxProtocol: 3,/maxProtocol: 4,/g' \
-      src/lib/gateway/openclaw/GatewayBrowserClient.ts \
-      src/lib/gateway/nodeGatewayClient.ts \
- && npm ci --no-audit --no-fund \
- && NEXT_TELEMETRY_DISABLED=1 \
-    NEXT_PUBLIC_GATEWAY_URL="${CLAW3D_BUILD_GATEWAY_URL}" \
-    npm run build
-
-# ============================================================
 # Hermes Agent — alternativa ao OpenClaw (NousResearch).
 # Mesmo padrao dos blocos acima: clone pinado + venv uv (Python 3.11) +
 # extra [all] (browser, mcp, messaging, etc.). O entrypoint sobe o

@@ -22,13 +22,6 @@ services:
       - ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
-      # Claw3D — Studio Next.js + proxy WS pro gateway in-process.
-      # Bindado em 127.0.0.1:3001 dentro do container; socat publica em
-      # 0.0.0.0:CLAW3D_PORT. Como o bind e' loopback, o access-gate fica
-      # desligado e o acesso via SSH tunnel funciona sem cookie.
-      # UPSTREAM_ALLOWLIST precisa de localhost,127.0.0.1 (gateway in-process).
-      - CLAW3D_PORT=${CLAW3D_PORT:-3000}
-      - UPSTREAM_ALLOWLIST=localhost,127.0.0.1
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       # Hermes — api_server OpenAI-compatible (alternativa ao OpenClaw).
       # API_SERVER_KEY e' obrigatorio pro gateway subir o servidor na 8642.
@@ -37,6 +30,18 @@ services:
       - HERMES_API_PORT=${HERMES_API_PORT:-8642}
       # Dashboard web do Hermes (pagina de gestao/chat) — porta separada da API.
       - HERMES_WEB_PORT=${HERMES_WEB_PORT:-9119}
+      # WhatsApp via Evolution Go — o middleware MCP alcanca a API pelo DNS de
+      # servico do compose (http://evolution-go:8080). Auth: GLOBAL (admin/create)
+      # + token da instancia (send/qr/status).
+      - EVOLUTION_BASE_URL=http://evolution-go:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
+      - EVOLUTION_INSTANCE_TOKEN=${EVOLUTION_INSTANCE_TOKEN:-}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-default}
+      # Bridge inbound do WhatsApp (webhook do Evolution -> Hermes -> resposta).
+      # WA_BRIDGE_ALLOWED_NUMBERS: CSV de numeros que podem falar com o agente
+      # (vazio = qualquer um). Recomendado preencher com o(s) seu(s) numero(s).
+      - WA_BRIDGE_PORT=${WA_BRIDGE_PORT:-8765}
+      - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
     volumes:
       # UM mount só, abrangendo tudo do OpenClaw
       - ${OPENCLAW_DATA_DIR}:/root/.openclaw
@@ -51,9 +56,6 @@ services:
       # Loopback do host pra alcancar o ollama interno (opcional, SSH tunnel):
       #   ssh -N -L 11434:127.0.0.1:11434 root@VPS
       - "127.0.0.1:11434:11434"
-      # Claw3D Studio — UI 3D dos agentes via Next.js:
-      #   ssh -N -L 3000:127.0.0.1:3000 root@VPS  -> http://localhost:3000
-      - "127.0.0.1:${CLAW3D_PORT:-3000}:3000"
       # Hermes — API OpenAI-compatible (porta separada, coexiste com o OpenClaw):
       #   ssh -N -L 8642:127.0.0.1:8642 root@VPS  -> http://localhost:8642/v1
       - "127.0.0.1:${HERMES_API_PORT:-8642}:8642"
@@ -68,3 +70,48 @@ services:
       - "--port"
       - "${OPENCLAW_GATEWAY_PORT}"
       - "--allow-unconfigured"
+
+  # ============================================================
+  # WhatsApp backend — Evolution Go (whatsmeow) + Postgres.
+  # Servicos irmaos na mesma rede default do compose; o container
+  # openclaw-vibestack alcanca a API por http://evolution-go:8080.
+  # A API so' e' publicada em loopback no host (Manager/QR via SSH tunnel).
+  # ============================================================
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # POSTGRES_DB cria 'evogo_auth'; o init SQL cria 'evogo_users' tambem.
+      - POSTGRES_DB=evogo_auth
+    volumes:
+      - ${POSTGRES_DATA_DIR:-/root/.evogo-pg}:/var/lib/postgresql/data
+      # Cria os dois bancos que o Evolution Go espera no primeiro init.
+      - ./postgres/init-evolution-dbs.sql:/docker-entrypoint-initdb.d/init-evolution-dbs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  evolution-go:
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-go:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8080
+      - GLOBAL_API_KEY=${EVOLUTION_API_KEY}
+      - POSTGRES_AUTH_DB=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_auth?sslmode=disable
+      - POSTGRES_USERS_DB=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_users?sslmode=disable
+      - DATABASE_SAVE_MESSAGES=false
+      # Webhook global: todo evento (inclusive mensagem recebida) vai pro bridge
+      # inbound que roda no container openclaw-vibestack (DNS do compose).
+      - WEBHOOK_URL=http://openclaw-vibestack:${WA_BRIDGE_PORT:-8765}/webhook
+    volumes:
+      - ${EVOLUTION_DATA_DIR:-/root/.evolution-go}:/app/data
+    ports:
+      # So' loopback no host — Manager/QR via SSH tunnel:
+      #   ssh -N -L 8080:127.0.0.1:8080 root@VPS  -> http://localhost:8080/manager/login
+      - "127.0.0.1:${EVOLUTION_PORT:-8080}:8080"

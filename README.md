@@ -34,6 +34,7 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 - [Atualizar o projeto na VPS](#atualizar-o-projeto-na-vps)
 - [Baixar modelos no Ollama](#baixar-modelos-no-ollama)
 - [Hermes Agent (alternativa ao OpenClaw)](#hermes-agent-alternativa-ao-openclaw)
+- [WhatsApp (Evolution Go)](#whatsapp-evolution-go)
 - [Referência técnica](#referência-técnica)
 - [Troubleshooting](#troubleshooting)
 
@@ -41,15 +42,16 @@ Imagem Docker self-hosted do [OpenClaw](https://github.com/openclaw/openclaw) co
 
 ## Arquitetura em uma frase
 
-Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, **(c)** um middleware Python MCP que envelopa a CLI oficial `meta-ads` da Meta como ~60 tools tipados pro agente, **(d)** o Claw3D Studio na 3000, e **(e)** o **Hermes Agent** na 8642 — uma alternativa ao OpenClaw que compartilha as mesmas tools MCP. Tudo em **portas separadas**, então coexistem sem conflito.
+Um container Docker (`openclaw-vibestack`) que roda **(a)** o gateway do OpenClaw na porta 18789 (loopback), **(b)** `ollama serve` em background na 11434, **(c)** middlewares Python MCP (`meta-ads`, `media-editor`, `whatsapp`) compartilhados pelos agentes, e **(d)** o **Hermes Agent** na 8642/9119 — alternativa ao OpenClaw com as mesmas tools. Ao lado, dois serviços irmãos no compose dão o canal de WhatsApp: **Evolution Go** (whatsmeow) na 8080 + **Postgres**. Tudo em **portas separadas**, coexistindo sem conflito.
 
-| Serviço            | Porta (loopback) | Processo                          |
-|--------------------|------------------|-----------------------------------|
-| OpenClaw gateway   | 18789            | `openclaw gateway` (principal)    |
-| Ollama             | 11434            | `ollama serve`                    |
-| Claw3D Studio      | 3000             | Next.js + socat                   |
-| Hermes API server  | 8642             | `hermes gateway` (api_server)     |
+| Serviço            | Porta (loopback) | Processo / serviço                  |
+|--------------------|------------------|-------------------------------------|
+| OpenClaw gateway   | 18789            | `openclaw gateway` (principal)      |
+| Ollama             | 11434            | `ollama serve`                      |
+| Hermes API server  | 8642             | `hermes gateway` (api_server)       |
 | Hermes dashboard   | 9119             | `hermes dashboard` (UI gestão/chat) |
+| Evolution Go       | 8080             | WhatsApp API (whatsmeow) — serviço  |
+| Postgres           | (interno)        | banco do Evolution Go               |
 
 O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, propagando `ACCESS_TOKEN`/`AD_ACCOUNT_ID` pro processo filho.
 
@@ -167,7 +169,7 @@ docker compose up -d
 
 | Segredo                  | Onde usar                                                                 |
 |--------------------------|---------------------------------------------------------------------------|
-| `OPENCLAW_GATEWAY_TOKEN` | Login do gateway OpenClaw (UI em `:18789`) e do Claw3D Studio (`:3000`).   |
+| `OPENCLAW_GATEWAY_TOKEN` | Login do gateway OpenClaw (UI em `:18789`).                               |
 | `HERMES_API_SERVER_KEY`  | API key / Bearer token pra conectar o **frontend** na API do Hermes (`http://127.0.0.1:8642/v1`). |
 | `GOG_KEYRING_PASSWORD`   | Uso interno (keyring do `gog` no container) — não vai em frontend.        |
 
@@ -589,13 +591,12 @@ Sugestões por tamanho:
 
 O [Hermes Agent](https://github.com/NousResearch/hermes-agent) da NousResearch vem
 **baked no mesmo container** como uma alternativa ao OpenClaw. Ele é clonado do git no
-build (pinado por `HERMES_REF`, igual OpenClaw/Claw3D), instalado num venv Python 3.11
+build (pinado por `HERMES_REF`, igual ao OpenClaw), instalado num venv Python 3.11
 com o extra `[all]` (browser/Playwright, mcp, messaging, etc.), e **compartilha as mesmas
-tools MCP** que o OpenClaw — `meta-ads` e `media-editor` (mesmos scripts em
+tools MCP** que o OpenClaw — `meta-ads`, `media-editor` e `whatsapp` (mesmos scripts em
 `/app/middleware`, mesmo venv).
 
-Ele expõe **duas portas separadas**, ambas coexistindo com OpenClaw (18789), Claw3D (3000)
-e Ollama (11434):
+Ele expõe **duas portas separadas**, ambas coexistindo com OpenClaw (18789) e Ollama (11434):
 
 - **8642 — `api_server`**: uma **API OpenAI-compatible** (`/v1/chat/completions`, `/v1/models`,
   `/health`). **Não é uma página de navegador** — é pra conectar frontends/clientes.
@@ -610,7 +611,7 @@ e Ollama (11434):
 2. **Sobe o `hermes gateway`** em background. A única plataforma que sobe sem token é o
    `api_server` (OpenAI-compatible), que **exige `HERMES_API_SERVER_KEY`** pra iniciar.
 3. **Sobe o `hermes dashboard`** em background, **bindado em loopback** (`127.0.0.1:9120`)
-   e publicado via **socat** em `9119` — mesmo padrão do Claw3D. O bind loopback é
+   e publicado via **socat** em `9119`. O bind loopback é
    obrigatório: o dashboard tem defesas de DNS-rebinding/Origin no WebSocket que rejeitam
    a aba Chat quando o bind é `0.0.0.0`; em loopback o WS é tratado como confiável e o
    socat (TCP-puro) leva o WebSocket transparente até a porta publicada. Sobe com `--tui`,
@@ -682,9 +683,64 @@ config, providers, env e conversa com o agente na aba **Chat**. Logs:
 ### Confirmar as tools registradas
 
 ```bash
-docker compose exec openclaw-vibestack hermes mcp list   # lista meta-ads e media-editor
+docker compose exec openclaw-vibestack hermes mcp list   # lista meta-ads, media-editor, whatsapp
 docker compose logs openclaw-vibestack | grep hermes      # ver o boot do gateway
 ```
+
+---
+
+## WhatsApp (Evolution Go)
+
+O canal de WhatsApp usa o [**Evolution Go**](https://github.com/evolution-foundation/evolution-go)
+— uma API em Go baseada em **`whatsmeow`** (o mesmo protocolo WhatsApp Web; **não usa Baileys**).
+Roda como **serviço separado** no `docker-compose` (imagem `evoapicloud/evolution-go`), com um
+**Postgres** ao lado. Os agentes (OpenClaw e Hermes) enviam mensagens pelo middleware MCP
+`whatsapp` (`middleware/whatsapp_evolution_mcp.py`), que fala com a API pelo DNS do compose
+(`http://evolution-go:8080`) — por isso **não precisa de URL pública**.
+
+**Canal completo (inbound + outbound):** além do envio, há um **bridge** inbound
+(`middleware/whatsapp_bridge.py`) que fecha o ciclo — você conversa com o agente pelo WhatsApp:
+
+```
+WhatsApp → Evolution Go (evento "Message") --webhook--> bridge (porta 8765, interna)
+        → Hermes api_server (/v1/chat/completions, sessão por número)
+        → Evolution Go (/send/text) → WhatsApp
+```
+
+O `evolution-go` posta os eventos no `WEBHOOK_URL=http://openclaw-vibestack:8765/webhook`
+(DNS do compose, automático). O bridge filtra só mensagens **recebidas** de texto (ignora as
+suas próprias, grupos e status), mantém **uma sessão Hermes por contato** (`X-Hermes-Session-Id`),
+responde 200 na hora (o agente pode demorar com tool calls) e processa em background.
+
+> **Quem responde:** o **Hermes** (api_server na 8642). É o agente do "canal". O `WA_BRIDGE_ALLOWED_NUMBERS`
+> restringe quem pode falar com ele (CSV de números; **vazio = qualquer um** — recomendado preencher).
+
+**Auth (confirmado no código do Evolution):** header `apikey`. A `EVOLUTION_API_KEY` (global) é
+de admin (criar instância); cada instância tem seu próprio token (`EVOLUTION_INSTANCE_TOKEN`,
+definido no create) usado em envio/QR/status.
+
+### Subir e parear (uma vez)
+
+```bash
+docker compose up -d        # sobe openclaw-vibestack + evolution-go + postgres
+```
+
+1. **Ativar a licença** (o Evolution responde `503` até ativar) no Manager:
+   ```bash
+   # VPS: ssh -N -L 8080:127.0.0.1:8080 root@YOUR_VPS_IP
+   # abra http://127.0.0.1:8080/manager/login  (API key = EVOLUTION_API_KEY)
+   ```
+2. **Criar a instância e parear** — pelo agente (tools MCP) ou pelo Manager:
+   - `wa_create_instance` → cria a instância com o `EVOLUTION_INSTANCE_TOKEN`.
+   - `wa_get_qr` → mostra o QR; escaneie no celular (WhatsApp → Aparelhos conectados).
+   - `wa_instance_status` → quando = `connected`, está pronto.
+3. **Enviar** (qualquer agente): `wa_send_text(number="5511999999999", text="oi")`.
+4. **Conversar (inbound):** com a instância pareada, mande uma mensagem do seu WhatsApp pro
+   número conectado — o bridge entrega ao Hermes e responde. Restrinja quem pode falar via
+   `WA_BRIDGE_ALLOWED_NUMBERS` no `.env`. Log do bridge:
+   `docker compose exec openclaw-vibestack tail -f /var/log/whatsapp-bridge.log`.
+
+⚠️ A licença do Evolution Go usa **heartbeats** (precisa de internet de saída); não é 100% offline.
 
 ---
 
@@ -694,12 +750,17 @@ docker compose logs openclaw-vibestack | grep hermes      # ver o boot do gatewa
 
 ```
 .
-├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware + claw3d + hermes
-├── entrypoint.sh            # ollama serve + openclaw mcp set + claw3d + hermes gateway + exec CMD
-├── docker-compose.yml       # serviço único openclaw-vibestack, env, volumes, portas
+├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware + hermes
+├── entrypoint.sh            # ollama serve + openclaw mcp set + hermes gateway/dashboard + exec CMD
+├── docker-compose.yml       # openclaw-vibestack + evolution-go + postgres (env, volumes, portas)
 ├── middleware/
-│   ├── meta_ads_cli_mcp.py  # MCP server Python — 70 tools (CLI + Graph API)
+│   ├── meta_ads_cli_mcp.py        # MCP — 70 tools Meta Ads (CLI + Graph API)
+│   ├── media_editor_mcp.py        # MCP — ffmpeg + Backblaze B2
+│   ├── whatsapp_evolution_mcp.py  # MCP — envio WhatsApp via Evolution Go (whatsmeow)
+│   ├── whatsapp_bridge.py         # bridge inbound: webhook Evolution -> Hermes -> resposta
 │   └── requirements.txt
+├── postgres/
+│   └── init-evolution-dbs.sql     # cria evogo_auth / evogo_users no 1o boot
 ├── .env.example
 └── README.md
 ```

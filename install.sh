@@ -203,9 +203,13 @@ fi
 OPENCLAW_DATA_DIR_VAL="${HOME_ENV}/.openclaw"
 OLLAMA_DATA_DIR_VAL="${HOME_ENV}/.ollama"
 HERMES_DATA_DIR_VAL="${HOME_ENV}/.hermes"
+EVOLUTION_DATA_DIR_VAL="${HOME_ENV}/.evolution-go"
+POSTGRES_DATA_DIR_VAL="${HOME_ENV}/.evogo-pg"
 info "OpenClaw data -> $OPENCLAW_DATA_DIR_VAL"
 info "Ollama data   -> $OLLAMA_DATA_DIR_VAL"
 info "Hermes data   -> $HERMES_DATA_DIR_VAL"
+info "Evolution data-> $EVOLUTION_DATA_DIR_VAL"
+info "Postgres data -> $POSTGRES_DATA_DIR_VAL"
 
 # --- helper de edicao in-place portavel (GNU vs BSD sed divergem) ----------
 # set_env_var FILE KEY VALUE  -> grava KEY=VALUE (cria a linha se faltar)
@@ -251,11 +255,11 @@ else
 fi
 
 # data dirs: sobrescreve apenas se vazio ou se ainda for o default da VPS.
-for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_DATA_DIR_VAL" "HERMES_DATA_DIR=$HERMES_DATA_DIR_VAL"; do
+for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_DATA_DIR_VAL" "HERMES_DATA_DIR=$HERMES_DATA_DIR_VAL" "EVOLUTION_DATA_DIR=$EVOLUTION_DATA_DIR_VAL" "POSTGRES_DATA_DIR=$POSTGRES_DATA_DIR_VAL"; do
   key="${pair%%=*}"; target="${pair#*=}"
   cur="$(get_env_var .env "$key")"
   case "$cur" in
-    ""|"/root/.openclaw"|"/root/.ollama"|"/root/.hermes")
+    ""|"/root/.openclaw"|"/root/.ollama"|"/root/.hermes"|"/root/.evolution-go"|"/root/.evogo-pg")
       set_env_var .env "$key" "$target"
       info "$key definido como $target"
       ;;
@@ -271,9 +275,6 @@ if [ "$FRESH_ENV" = "1" ] && [ "$INTERACTIVE" = "1" ]; then
 
   port="$(ask 'Porta do gateway OpenClaw' '18789')"
   set_env_var .env OPENCLAW_GATEWAY_PORT "$port"
-
-  claw_port="$(ask 'Porta do Claw3D Studio (UI 3D)' '3000')"
-  set_env_var .env CLAW3D_PORT "$claw_port"
 
   if ask_yesno 'Vai usar o MCP de Meta Ads (campanhas/insights)?' 'n'; then
     info 'Gere o token em Business Settings -> System Users -> Generate Token (escopo ads_management/ads_read).'
@@ -297,13 +298,32 @@ if [ "$FRESH_ENV" = "1" ] && [ "$INTERACTIVE" = "1" ]; then
   else
     info 'media-editor pulado — preencha os B2_* no .env depois se precisar.'
   fi
+
+  # Senha do Postgres do Evolution Go: o usuario pode digitar a sua, ou dar
+  # Enter (vazio) pra deixar o passo de segredos gerar uma automaticamente.
+  pg_pass="$(ask 'Senha do Postgres do WhatsApp/Evolution (Enter = gerar automatica)' '')"
+  if [ -n "$pg_pass" ]; then
+    set_env_var .env POSTGRES_PASSWORD "$pg_pass"
+    info 'POSTGRES_PASSWORD definido (manual).'
+  else
+    info 'POSTGRES_PASSWORD em branco — sera gerado automaticamente no passo de segredos.'
+  fi
+
+  # Allowlist do canal de WhatsApp: numeros que podem conversar com o agente.
+  wa_nums="$(ask 'Seu numero de WhatsApp p/ falar com o agente (DDI+DDD+numero; vazio = qualquer um)' '')"
+  if [ -n "$wa_nums" ]; then
+    set_env_var .env WA_BRIDGE_ALLOWED_NUMBERS "$wa_nums"
+    info "Canal WhatsApp restrito a: $wa_nums"
+  else
+    warn 'WA_BRIDGE_ALLOWED_NUMBERS vazio — QUALQUER numero podera conversar com o agente. Edite o .env pra restringir.'
+  fi
 elif [ "$FRESH_ENV" = "1" ]; then
   warn 'Sem terminal interativo — .env criado com defaults. Edite-o pra preencher Meta Ads / B2.'
 fi
 
 # --- 5. segredos -----------------------------------------------------------
 step "Gerando segredos (se vazios)"
-for key in OPENCLAW_GATEWAY_TOKEN GOG_KEYRING_PASSWORD HERMES_API_SERVER_KEY; do
+for key in OPENCLAW_GATEWAY_TOKEN GOG_KEYRING_PASSWORD HERMES_API_SERVER_KEY EVOLUTION_API_KEY EVOLUTION_INSTANCE_TOKEN POSTGRES_PASSWORD; do
   cur="$(get_env_var .env "$key")"
   if [ -z "$cur" ]; then
     set_env_var .env "$key" "$(gen_secret)"
@@ -318,6 +338,9 @@ ENV_PATH_ABS="$(pwd)/.env"
 OPENCLAW_GATEWAY_TOKEN_VAL="$(get_env_var .env OPENCLAW_GATEWAY_TOKEN)"
 GOG_KEYRING_PASSWORD_VAL="$(get_env_var .env GOG_KEYRING_PASSWORD)"
 HERMES_API_SERVER_KEY_VAL="$(get_env_var .env HERMES_API_SERVER_KEY)"
+EVOLUTION_API_KEY_VAL="$(get_env_var .env EVOLUTION_API_KEY)"
+EVOLUTION_INSTANCE_TOKEN_VAL="$(get_env_var .env EVOLUTION_INSTANCE_TOKEN)"
+POSTGRES_PASSWORD_VAL="$(get_env_var .env POSTGRES_PASSWORD)"
 
 # --- 6. normalizar entrypoint.sh para LF -----------------------------------
 step "Normalizando entrypoint.sh (LF)"
@@ -333,8 +356,8 @@ fi
 
 # --- 7. criar diretorios de dados ------------------------------------------
 step "Criando diretorios de dados"
-mkdir -p "${HOME_BASH}/.openclaw" "${HOME_BASH}/.ollama" "${HOME_BASH}/.hermes"
-info "OK: ${HOME_BASH}/.openclaw, ${HOME_BASH}/.ollama e ${HOME_BASH}/.hermes"
+mkdir -p "${HOME_BASH}/.openclaw" "${HOME_BASH}/.ollama" "${HOME_BASH}/.hermes" "${HOME_BASH}/.evolution-go" "${HOME_BASH}/.evogo-pg"
+info "OK: .openclaw, .ollama, .hermes, .evolution-go, .evogo-pg (em ${HOME_BASH})"
 
 # --- 8. build --------------------------------------------------------------
 step "Build da imagem (docker compose build)"
@@ -368,6 +391,14 @@ Proximos passos (manuais):
            Local:  http://127.0.0.1:8642/v1   (Bearer = HERMES_API_SERVER_KEY)
            VPS:    ssh -N -L 8642:127.0.0.1:8642 root@SEU_VPS_IP
 
+  5) (Opcional) WhatsApp via Evolution Go (servico na 8080):
+       a) Ative a licenca (uma vez) no Manager:
+            Local: http://127.0.0.1:8080/manager/login   (API key = EVOLUTION_API_KEY)
+            VPS:   ssh -N -L 8080:127.0.0.1:8080 root@SEU_VPS_IP
+       b) Crie a instancia e pareie (pelo agente ou Manager):
+            tool 'wa_create_instance' -> 'wa_get_qr' -> escaneie no celular
+       c) 'wa_instance_status' = connected -> os agentes enviam via 'wa_send_text'.
+
 ${C_BOLD}Credenciais geradas${C_OFF} (guarde com cuidado — todas vivem em ${C_BOLD}${ENV_PATH_ABS}${C_OFF}):
 
   ${C_BOLD}HERMES_API_SERVER_KEY${C_OFF} = ${HERMES_API_SERVER_KEY_VAL}
@@ -377,17 +408,26 @@ ${C_BOLD}Credenciais geradas${C_OFF} (guarde com cuidado — todas vivem em ${C_
         curl http://127.0.0.1:8642/v1/models -H "Authorization: Bearer ${HERMES_API_SERVER_KEY_VAL}"
 
   ${C_BOLD}OPENCLAW_GATEWAY_TOKEN${C_OFF} = ${OPENCLAW_GATEWAY_TOKEN_VAL}
-      Onde usar: autentica o gateway do OpenClaw e o login do Claw3D Studio
-      (mesmo segredo). A UI do OpenClaw (http://127.0.0.1:18789) pede este token.
+      Onde usar: autentica o gateway do OpenClaw. A UI (http://127.0.0.1:18789) pede este token.
+
+  ${C_BOLD}EVOLUTION_API_KEY${C_OFF} = ${EVOLUTION_API_KEY_VAL}
+      Onde usar: ativar a licenca no Manager do Evolution Go (/manager/login) e criar instancia.
+  ${C_BOLD}EVOLUTION_INSTANCE_TOKEN${C_OFF} = ${EVOLUTION_INSTANCE_TOKEN_VAL}
+      Onde usar: token da instancia de WhatsApp (envio/qr/status). Definido no 'wa_create_instance'.
+
+  ${C_BOLD}POSTGRES_PASSWORD${C_OFF} = ${POSTGRES_PASSWORD_VAL}
+      Onde usar: senha do Postgres do Evolution Go (uso interno entre os servicos do compose).
 
   ${C_BOLD}GOG_KEYRING_PASSWORD${C_OFF} = ${GOG_KEYRING_PASSWORD_VAL}
       Onde usar: uso INTERNO (keyring do gog dentro do container). Nao vai em frontend.
 
-  Pra reexibir depois: grep -E 'HERMES_API_SERVER_KEY|OPENCLAW_GATEWAY_TOKEN' "${ENV_PATH_ABS}"
+  Pra reexibir depois: grep -E 'HERMES_API_SERVER_KEY|OPENCLAW_GATEWAY_TOKEN|EVOLUTION_|POSTGRES_PASSWORD' "${ENV_PATH_ABS}"
 
 Dados persistentes:
   ${OPENCLAW_DATA_DIR_VAL}
   ${OLLAMA_DATA_DIR_VAL}
   ${HERMES_DATA_DIR_VAL}
+  ${EVOLUTION_DATA_DIR_VAL}
+  ${POSTGRES_DATA_DIR_VAL}
 
 EOF
