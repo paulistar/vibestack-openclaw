@@ -211,6 +211,32 @@ info "Hermes data   -> $HERMES_DATA_DIR_VAL"
 info "Evolution data-> $EVOLUTION_DATA_DIR_VAL"
 info "Postgres data -> $POSTGRES_DATA_DIR_VAL"
 
+# --- 3b. instalacao anterior? reaproveitar ou comecar do zero --------------
+# Detecta diretorios de dados ja' existentes (config, modelos do Ollama,
+# sessoes, bancos). Reaproveitar mantem tudo; "do zero" APAGA esses diretorios.
+EXISTING_DIRS=""
+for d in .openclaw .ollama .hermes .evolution-go .evogo-pg; do
+  [ -d "${HOME_BASH}/${d}" ] && EXISTING_DIRS="${EXISTING_DIRS} ${HOME_BASH}/${d}"
+done
+if [ -n "$EXISTING_DIRS" ]; then
+  step "Instalacao anterior detectada"
+  for d in $EXISTING_DIRS; do info "encontrado: $d"; done
+  if [ "$INTERACTIVE" = "1" ]; then
+    if ask_yesno 'Reaproveitar os dados existentes? (Nao = comecar do zero, APAGA esses diretorios)' 'y'; then
+      info 'Reaproveitando os dados existentes.'
+    else
+      warn 'Comecar do zero APAGA: config do OpenClaw/Hermes, modelos do Ollama (re-download), bancos do Evolution/Postgres.'
+      if ask_yesno 'Confirma APAGAR os diretorios acima e comecar limpo?' 'n'; then
+        for d in $EXISTING_DIRS; do rm -rf "$d" && info "apagado: $d"; done
+      else
+        info 'Reset cancelado — mantendo os dados existentes.'
+      fi
+    fi
+  else
+    info 'Sem terminal interativo — reaproveitando os dados existentes (nada e apagado).'
+  fi
+fi
+
 # --- helper de edicao in-place portavel (GNU vs BSD sed divergem) ----------
 # set_env_var FILE KEY VALUE  -> grava KEY=VALUE (cria a linha se faltar)
 set_env_var() {
@@ -246,10 +272,18 @@ gen_secret() {
 # --- 4. preparar .env ------------------------------------------------------
 step "Preparando .env"
 FRESH_ENV=0
+RECONFIG=0
 if [ ! -f .env ]; then
   cp .env.example .env
   FRESH_ENV=1
   info ".env criado a partir de .env.example"
+elif [ "$INTERACTIVE" = "1" ]; then
+  if ask_yesno '.env ja existe. Reaproveitar como esta? (Nao = reconfigurar os valores)' 'y'; then
+    info '.env reaproveitado (valores preservados).'
+  else
+    RECONFIG=1
+    info '.env sera reconfigurado — Enter em cada pergunta MANTEM o valor atual.'
+  fi
 else
   info ".env ja' existe — preservando valores."
 fi
@@ -269,28 +303,33 @@ for pair in "OPENCLAW_DATA_DIR=$OPENCLAW_DATA_DIR_VAL" "OLLAMA_DATA_DIR=$OLLAMA_
   esac
 done
 
-# --- 4b. perguntas interativas (so' em .env novo, com terminal) ------------
-if [ "$FRESH_ENV" = "1" ] && [ "$INTERACTIVE" = "1" ]; then
-  step "Configurando .env (Enter aceita o valor entre colchetes)"
+# --- 4b. perguntas interativas (.env novo OU reconfigurando, com terminal) -
+# Os defaults [entre colchetes] vem do valor ATUAL do .env, entao Enter mantem
+# (vale tanto pro .env recem-criado do exemplo quanto pra reconfiguracao).
+if { [ "$FRESH_ENV" = "1" ] || [ "$RECONFIG" = "1" ]; } && [ "$INTERACTIVE" = "1" ]; then
+  step "Configurando .env (Enter mantem o valor entre colchetes)"
 
-  port="$(ask 'Porta do gateway OpenClaw' '18789')"
+  port="$(ask 'Porta do gateway OpenClaw' "$(get_env_var .env OPENCLAW_GATEWAY_PORT)")"
   set_env_var .env OPENCLAW_GATEWAY_PORT "$port"
 
-  if ask_yesno 'Vai usar o MCP de Meta Ads (campanhas/insights)?' 'n'; then
+  meta_default='n'; [ -n "$(get_env_var .env META_ACCESS_TOKEN)" ] && meta_default='y'
+  if ask_yesno 'Vai usar o MCP de Meta Ads (campanhas/insights)?' "$meta_default"; then
     info 'Gere o token em Business Settings -> System Users -> Generate Token (escopo ads_management/ads_read).'
-    meta_tok="$(ask 'META_ACCESS_TOKEN' '')"
-    meta_acc="$(ask 'META_AD_ACCOUNT_ID (act_123 ou 123 — pode deixar vazio)' '')"
+    meta_tok="$(ask 'META_ACCESS_TOKEN' "$(get_env_var .env META_ACCESS_TOKEN)")"
+    meta_acc="$(ask 'META_AD_ACCOUNT_ID (act_123 ou 123 — pode deixar vazio)' "$(get_env_var .env META_AD_ACCOUNT_ID)")"
     set_env_var .env META_ACCESS_TOKEN "$meta_tok"
     set_env_var .env META_AD_ACCOUNT_ID "$meta_acc"
   else
     info 'Meta Ads pulado — preencha META_ACCESS_TOKEN no .env depois se mudar de ideia.'
   fi
 
-  if ask_yesno 'Vai usar o media-editor (ffmpeg + Backblaze B2)?' 'n'; then
-    b2_key="$(ask 'B2_KEY_ID' '')"
-    b2_app="$(ask 'B2_APP_KEY' '')"
-    b2_bucket="$(ask 'B2_BUCKET' '')"
-    b2_ep="$(ask 'B2_ENDPOINT_URL' 'https://s3.us-west-002.backblazeb2.com')"
+  b2_default='n'; [ -n "$(get_env_var .env B2_KEY_ID)" ] && b2_default='y'
+  if ask_yesno 'Vai usar o media-editor (ffmpeg + Backblaze B2)?' "$b2_default"; then
+    b2_ep_cur="$(get_env_var .env B2_ENDPOINT_URL)"; [ -z "$b2_ep_cur" ] && b2_ep_cur='https://s3.us-west-002.backblazeb2.com'
+    b2_key="$(ask 'B2_KEY_ID' "$(get_env_var .env B2_KEY_ID)")"
+    b2_app="$(ask 'B2_APP_KEY' "$(get_env_var .env B2_APP_KEY)")"
+    b2_bucket="$(ask 'B2_BUCKET' "$(get_env_var .env B2_BUCKET)")"
+    b2_ep="$(ask 'B2_ENDPOINT_URL' "$b2_ep_cur")"
     set_env_var .env B2_KEY_ID "$b2_key"
     set_env_var .env B2_APP_KEY "$b2_app"
     set_env_var .env B2_BUCKET "$b2_bucket"
@@ -299,26 +338,31 @@ if [ "$FRESH_ENV" = "1" ] && [ "$INTERACTIVE" = "1" ]; then
     info 'media-editor pulado — preencha os B2_* no .env depois se precisar.'
   fi
 
-  # Senha do Postgres do Evolution Go: o usuario pode digitar a sua, ou dar
-  # Enter (vazio) pra deixar o passo de segredos gerar uma automaticamente.
-  pg_pass="$(ask 'Senha do Postgres do WhatsApp/Evolution (Enter = gerar automatica)' '')"
+  # Agente que responde o canal de WhatsApp (Telegram-like): hermes | openclaw.
+  wa_agent="$(ask 'Agente que responde o WhatsApp (hermes|openclaw)' "$(get_env_var .env WA_BRIDGE_AGENT)")"
+  [ -n "$wa_agent" ] && set_env_var .env WA_BRIDGE_AGENT "$wa_agent"
+
+  # Senha do Postgres do Evolution: Enter mantem a atual; se ficar vazia, o
+  # passo de segredos gera uma automaticamente.
+  pg_cur="$(get_env_var .env POSTGRES_PASSWORD)"
+  pg_pass="$(ask 'Senha do Postgres do WhatsApp/Evolution (Enter = manter/gerar)' "$pg_cur")"
   if [ -n "$pg_pass" ]; then
     set_env_var .env POSTGRES_PASSWORD "$pg_pass"
-    info 'POSTGRES_PASSWORD definido (manual).'
+    info 'POSTGRES_PASSWORD definido.'
   else
     info 'POSTGRES_PASSWORD em branco — sera gerado automaticamente no passo de segredos.'
   fi
 
   # Allowlist do canal de WhatsApp: numeros que podem conversar com o agente.
-  wa_nums="$(ask 'Seu numero de WhatsApp p/ falar com o agente (DDI+DDD+numero; vazio = qualquer um)' '')"
+  wa_nums="$(ask 'Seu numero de WhatsApp p/ falar com o agente (DDI+DDD+numero; vazio = qualquer um)' "$(get_env_var .env WA_BRIDGE_ALLOWED_NUMBERS)")"
+  set_env_var .env WA_BRIDGE_ALLOWED_NUMBERS "$wa_nums"
   if [ -n "$wa_nums" ]; then
-    set_env_var .env WA_BRIDGE_ALLOWED_NUMBERS "$wa_nums"
     info "Canal WhatsApp restrito a: $wa_nums"
   else
     warn 'WA_BRIDGE_ALLOWED_NUMBERS vazio — QUALQUER numero podera conversar com o agente. Edite o .env pra restringir.'
   fi
 elif [ "$FRESH_ENV" = "1" ]; then
-  warn 'Sem terminal interativo — .env criado com defaults. Edite-o pra preencher Meta Ads / B2.'
+  warn 'Sem terminal interativo — .env criado com defaults. Edite-o pra preencher Meta Ads / B2 / WhatsApp.'
 fi
 
 # --- 5. segredos -----------------------------------------------------------
