@@ -105,8 +105,9 @@ Duas maneiras de chamá-lo:
 
 **1a — direto da web (o instalador clona o repo sozinho):**
 
+No terminal (Mac/Linux: terminal normal; Windows: **Git Bash ou WSL**, não PowerShell/CMD):
+
 ```bash
-# Mac/Linux: terminal normal  •  Windows: Git Bash ou WSL (NÃO PowerShell/CMD)
 curl -fsSL https://raw.githubusercontent.com/ericorenato/vibestack-openclaw/main/install.sh | bash
 ```
 
@@ -114,18 +115,20 @@ Ele clona o repo em `./vibestack-openclaw` (mude o destino com `OPENCLAW_DIR=/ca
 
 **1b — clonando você mesmo (reaproveita um `.env` já existente):**
 
+No Windows, rode em **Git Bash ou WSL** (não PowerShell/CMD):
+
 ```bash
 git clone https://github.com/ericorenato/vibestack-openclaw.git
 cd vibestack-openclaw
-./install.sh          # no Windows: rode em Git Bash ou WSL
+./install.sh
 ```
 
 Rodar o `./install.sh` numa pasta que **já tem** `.env` é a forma de **consertar** um `.env` herdado da VPS (com `OPENCLAW_DATA_DIR=/root/.openclaw`) — ele reescreve os data dirs pros caminhos do seu SO e preserva seus tokens.
 
-Depois de qualquer uma das duas:
+Depois de qualquer uma das duas, **de dentro da pasta do projeto**:
 
 ```bash
-docker compose up -d   # de dentro da pasta do projeto
+docker compose up -d
 ```
 
 > **Modo não-interativo (CI / sem terminal):** exporte `NONINTERACTIVE=1` e o `.env` é criado só com defaults + segredos gerados (preencha Meta Ads / B2 editando o arquivo depois).
@@ -350,10 +353,15 @@ Espera ver os servers registrados — entre eles `[entrypoint] mcp 'meta-ads' re
 - `AVISO: ATLASCLOUD_API_KEY vazio` → preencha `ATLASCLOUD_API_KEY` no `.env` (o MCP `atlascloud` sobe, mas falha auth até preencher).
 - Higgsfield: o MCP sobe sem credencial — a auth é por login (veja [Geração de mídia](#geração-de-mídia--hub-de-modelos)); confira com `docker compose exec openclaw-vibestack higgsfield auth status`.
 
-Pra listar tudo de uma vez (ou inspecionar a config gravada):
+Pra listar tudo de uma vez (deve mostrar `meta-ads`, `media-editor`, `whatsapp`, `higgsfield` e `atlascloud`):
 
 ```bash
-docker compose exec openclaw-vibestack openclaw mcp list   # meta-ads, media-editor, whatsapp, higgsfield, atlascloud
+docker compose exec openclaw-vibestack openclaw mcp list
+```
+
+Ou inspecionar a config gravada de um server específico:
+
+```bash
 docker compose exec openclaw-vibestack cat /root/.openclaw/openclaw.json | grep -A8 meta-ads
 ```
 
@@ -571,9 +579,11 @@ Jobs persistem em `/root/.openclaw/cron/jobs.json` — sobrevivem a `docker comp
 ```bash
 cd ~/vibestack-openclaw
 git pull
-docker compose build           # se Dockerfile ou middleware/ mudou
+docker compose build
 docker compose up -d --force-recreate openclaw-vibestack
 ```
+
+(O `docker compose build` só é necessário se o `Dockerfile` ou a pasta `middleware/` mudaram.)
 
 Pra atualizar a versão do openclaw upstream, edita no `.env`:
 
@@ -702,9 +712,16 @@ config, providers, env e conversa com o agente na aba **Chat**. Logs:
 
 ### Confirmar as tools registradas
 
+Lista os MCP servers do Hermes (deve mostrar `meta-ads`, `media-editor`, `whatsapp`, `higgsfield`, `atlascloud`):
+
 ```bash
-docker compose exec openclaw-vibestack hermes mcp list   # meta-ads, media-editor, whatsapp, higgsfield, atlascloud
-docker compose logs openclaw-vibestack | grep hermes      # ver o boot do gateway
+docker compose exec openclaw-vibestack hermes mcp list
+```
+
+Ver o boot do gateway no log:
+
+```bash
+docker compose logs openclaw-vibestack | grep hermes
 ```
 
 ---
@@ -772,8 +789,10 @@ O compose mapeia isso pras vars que o Evolution Go lê (`MINIO_ENABLED/ENDPOINT/
 
 ### Subir e parear (uma vez)
 
+Sobe os três serviços (openclaw-vibestack + evolution-go + postgres):
+
 ```bash
-docker compose up -d        # sobe openclaw-vibestack + evolution-go + postgres
+docker compose up -d
 ```
 
 1. **Ativar a licença** (o Evolution responde `503` até ativar) no Manager:
@@ -803,12 +822,17 @@ São **opcionais** — habilite se quiser que o agente **Criativo** gere imagem/
 
 O Higgsfield não tem MCP oficial funcional, então a imagem instala o **CLI** (`@higgsfield/cli`) e o expõe via um middleware MCP próprio (`higgsfield_cli_mcp.py`): tools `generate_image`, `generate_video`, `soul_id_create`, `upload`, etc.
 
-A autenticação é **OAuth no navegador** (não tem API key). Por isso você loga **uma vez** e o token persiste num volume (`${HIGGSFIELD_DATA_DIR}` → `/root/.higgsfield`) — sobrevive a restart/rebuild:
+A autenticação é **OAuth no navegador** (não tem API key). Por isso você loga **uma vez** e o token persiste num volume (`${HIGGSFIELD_DATA_DIR}` → `/root/.higgsfield`) — sobrevive a restart/rebuild.
+
+Login (uma vez; abre uma URL/código pra logar no navegador):
 
 ```bash
-# 1x (abre uma URL/código pra logar no navegador):
 docker compose exec openclaw-vibestack higgsfield auth login
-# Conferir quando quiser:
+```
+
+Conferir o status quando quiser:
+
+```bash
 docker compose exec openclaw-vibestack higgsfield auth status
 ```
 
@@ -818,11 +842,11 @@ Tokens são curtos: **só refaça o login quando `auth status` acusar expiraçã
 
 Hub de 300+ modelos (imagem/vídeo/LLM). Aqui usamos o **MCP server oficial** (`atlascloud-mcp`, instalado na imagem) — não há CLI/wrapper a manter. Auth é **só por API key via env**, sem login nem volume: a chave no `.env` já sobrevive a restart.
 
+1. Pegue a key em https://www.atlascloud.ai/console/api-keys.
+2. Preencha `ATLASCLOUD_API_KEY=...` no `.env` (ou responda a pergunta do `install.sh`).
+3. Recrie o container pra propagar a env:
+
 ```bash
-# 1) Pegue a key em https://www.atlascloud.ai/console/api-keys
-# 2) Preencha no .env (ou responda a pergunta do install.sh):
-#    ATLASCLOUD_API_KEY=...
-# 3) Recrie o container pra propagar a env:
 docker compose up -d --force-recreate openclaw-vibestack
 ```
 
