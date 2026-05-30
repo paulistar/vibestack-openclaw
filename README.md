@@ -859,7 +859,7 @@ O `entrypoint.sh` registra estes MCP servers no boot (no OpenClaw via `openclaw 
 | MCP server   | O que dá ao agente                                                   | Como é instalado                                                        | Auth (no `.env`)                          | Documentação |
 |--------------|----------------------------------------------------------------------|-------------------------------------------------------------------------|-------------------------------------------|--------------|
 | `meta-ads`   | 70 tools de Meta Ads (campanhas, ad sets, ads, creatives, insights, catálogos, pixels, custom audiences, lookalikes, duplicação) | middleware Python (`meta_ads_cli_mcp.py`) envelopando a CLI oficial `meta` | `META_ACCESS_TOKEN` (+ `META_AD_ACCOUNT_ID`) | [Tools do MCP Meta Ads](#tools-do-mcp-meta-ads) |
-| `media-editor` | Edição de mídia com **ffmpeg** (cortar, redimensionar, overlay, trilha, validar p/ Meta) + **Backblaze B2** como storage de seeds/derivações | middleware Python (`media_editor_mcp.py`) + `ffmpeg` na imagem            | `B2_KEY_ID` / `B2_APP_KEY` / `B2_BUCKET` / `B2_ENDPOINT_URL` | (este README, seções B2) |
+| `media-editor` | Edição de mídia com **ffmpeg** (cortar, redimensionar, overlay, trilha, validar p/ Meta) + **Backblaze B2** como storage de seeds/derivações | middleware Python (`media_editor_mcp.py`) + `ffmpeg` na imagem            | `B2_KEY_ID` / `B2_APP_KEY` / `B2_BUCKET` / `B2_ENDPOINT_URL` | [Tools do MCP media-editor](#tools-do-mcp-media-editor-ffmpeg--backblaze-b2) |
 | `whatsapp`   | Enviar texto/mídia e gerir a instância (QR/status) via Evolution Go  | middleware Python (`whatsapp_evolution_mcp.py`)                          | `EVOLUTION_API_KEY` / `EVOLUTION_INSTANCE_TOKEN` | [WhatsApp (Evolution Go)](#whatsapp-evolution-go) |
 | `higgsfield` | Gerar **imagem/vídeo** e treinar **soul-id** (rosto fiel)            | middleware Python (`higgsfield_cli_mcp.py`) envelopando o CLI `@higgsfield/cli` (instalado na imagem) | login no navegador 1x (token em volume `${HIGGSFIELD_DATA_DIR}`) | [Geração de mídia](#geração-de-mídia--hub-de-modelos) |
 | `atlascloud` | Hub de **300+ modelos** (imagem/vídeo/LLM)                           | MCP server **oficial** `atlascloud-mcp` (npm, instalado na imagem)      | `ATLASCLOUD_API_KEY`                      | [Geração de mídia](#geração-de-mídia--hub-de-modelos) |
@@ -898,6 +898,42 @@ Pra adicionar os seus, veja [Adicionar uma CLI nova à imagem](#adicionar-uma-cl
 - **Duplicação** (Graph API direta — endpoint `/copies`): `duplicate_campaign`, `duplicate_ad_set`, `duplicate_ad`. Default `status_option="PAUSED"` + `deep_copy=True`. Aceita `new_name` (renomeia depois de duplicar) ou `rename_suffix` (Meta acrescenta sufixo numa única chamada).
 
 Todas as tools que envelopam a CLI aceitam `output_format` (`json` default | `table` | `plain` | `none`). Todos os `create_*` e `duplicate_*` partem com `status="paused"` / `status_option="PAUSED"` por segurança. As tools de audience hasham email/phone localmente em SHA256 antes de enviar (Meta exige PII hasheada) — use `already_hashed=True` se a lista já vier pronta.
+
+### Tools do MCP media-editor (ffmpeg + Backblaze B2)
+
+O MCP `media-editor` (`middleware/media_editor_mcp.py`) é o **editor de imagem/vídeo do agente Criativo**. Toda mídia (seeds e derivações) vive no **Backblaze B2** — as tools recebem e devolvem **chaves B2 puras** (sem `b2://`), nos prefixos `inbox/`, `seeds/`, `work/`, `final/`, `requests/`, `meta/`. As transformações usam **ffmpeg** dentro do container e são **idempotentes**: sem `output_key` a saída é derivada de `hash(input + params)` em `work/<slug>/...`, então re-rodar a mesma operação devolve `was_cached=true` sem reprocessar. Requer os `B2_*` no `.env`.
+
+**Seeds & inbox (descoberta de mídia-base):**
+- `list_seeds(kind=None)` — lista mídia-base já classificada (`image`/`video`/`audio`).
+- `request_human_media(slug, instructions, deadline_iso)` — registra um pedido de gravação humana em `requests/`.
+- `list_inbox(prefix="")` / `claim_inbox_item(inbox_key, seed_kind, seed_slug)` — vê uploads humanos pendentes e os promove de `inbox/` → `seeds/<kind>/<slug>`.
+- `b2_list(prefix, max_keys=100)`, `b2_get_info(key)`, `b2_upload_local(local_path, key)`, `b2_delete(key)` — utilitários crus de bucket.
+
+**Imagem:**
+- `image_fit(input_key, width, height, mode="cover", output_format=None, output_key=None)` — redimensiona/recorta. `mode`: `cover` (padrão), `contain` (padding), `crop`, `stretch`. Ex.: 1:1 → `width=1080, height=1080`; 9:16 → `1080x1920`.
+- `image_overlay(input_key, kind, position="center", text=..., overlay_key=..., font_size=48, font_color="white", box=True, scale_pct=100)` — sobrepõe **texto** (`kind="text"`) ou **logo/imagem** (`kind="image"`).
+
+**Vídeo (encadeie na ordem):**
+- `video_trim` (cortar início/fim) → `video_fit` (enquadrar WxH) → `video_overlay` (legenda/logo) → `video_audio` (trilha) → `video_loop` / `video_speed` quando precisar.
+- Auxiliares: `video_concat` (juntar clipes), `video_transcode` (codec/bitrate), `video_extract_frame` (tira um frame como seed-imagem).
+
+**Validar & finalizar:**
+- `probe(key, validate_for=None)` — inspeciona dimensões/duração/codecs. `validate_for`: `meta_image_feed` | `meta_image_story` | `meta_video_feed` | `meta_video_reels` → retorna `valid=true/false` + violações.
+- `finalize_for_meta(b2_key, slug, description)` — **único caminho que materializa o arquivo local**: baixa do B2 e grava em `/root/.openclaw/workspace/_shared/creatives/` (persistente), devolvendo `path`, `width`/`height`, `duration_seconds`, `valid_for_meta`. Esse `path` é o que o **Gestor** passa pro `create_creative` do MCP `meta-ads`.
+
+**Exemplo (criativo de imagem 1:1 com legenda), como o Criativo encadearia:**
+
+```text
+list_seeds(kind="image")                              -> acha seeds/image/produto.jpg
+image_fit("seeds/image/produto.jpg", 1080, 1080)      -> work/.../fit.jpg
+image_overlay(<fit>, kind="text", text="50% OFF",
+              position="bottom", box=True)            -> work/.../overlay.jpg
+probe(<overlay>, validate_for="meta_image_feed")      -> {"valid": true, ...}
+finalize_for_meta(<overlay>, "promo-julho",
+                  "Banner 1:1 50% OFF")               -> {"path": ".../_shared/creatives/promo-julho-....jpg"}
+```
+
+Para gerar mídia **do zero** (em vez de transformar uma seed), use os MCPs [`higgsfield`/`atlascloud`](#geração-de-mídia--hub-de-modelos) e depois suba o resultado pro B2 com `b2_upload_local` para entrar nesse pipeline. Detalhes do papel do Criativo em `agency/criativo/AGENTS.md`.
 
 ### Convenções de segurança operacional do wrapper
 
