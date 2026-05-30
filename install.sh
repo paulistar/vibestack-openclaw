@@ -274,20 +274,30 @@ gen_secret() {
 # _wa_expand_br "CSV de numeros" -> CSV com as variantes BR (com/sem o 9o digito).
 # WhatsApp as vezes entrega o numero BR sem o 9; registramos as duas formas pra
 # o allowlist casar. Ex.: 5584996306412 -> 5584996306412,558496306412
+# IDEMPOTENTE: dá pra rodar em cima de um valor ja' expandido (ex.: ao dar Enter
+# pra manter o WA_BRIDGE_ALLOWED_NUMBERS atual) sem duplicar — faz dedup no final.
 _wa_expand_br() {
-  _out=""; _oldifs="$IFS"; IFS=','
+  _exp=""; _oldifs="$IFS"; IFS=','
   for _n in $1; do
     _n=$(printf '%s' "$_n" | tr -cd '0-9')
     [ -z "$_n" ] && continue
-    _out="${_out:+$_out,}$_n"
+    _exp="${_exp:+$_exp,}$_n"
     case "$_n" in
       55*)
         _len=${#_n}; _pre=$(printf '%s' "$_n" | cut -c1-4)   # 55 + DDD
         if [ "$_len" -eq 13 ] && [ "$(printf '%s' "$_n" | cut -c5)" = "9" ]; then
-          _out="$_out,${_pre}$(printf '%s' "$_n" | cut -c6-)"     # sem o 9
+          _exp="$_exp,${_pre}$(printf '%s' "$_n" | cut -c6-)"     # sem o 9
         elif [ "$_len" -eq 12 ]; then
-          _out="$_out,${_pre}9$(printf '%s' "$_n" | cut -c5-)"    # com o 9
+          _exp="$_exp,${_pre}9$(printf '%s' "$_n" | cut -c5-)"    # com o 9
         fi ;;
+    esac
+  done
+  # Remove duplicatas preservando a ordem (corrige a repeticao ao reusar o valor).
+  _out=""
+  for _x in $_exp; do
+    case ",$_out," in
+      *",$_x,"*) ;;                                   # ja' esta na lista
+      *) _out="${_out:+$_out,}$_x" ;;
     esac
   done
   IFS="$_oldifs"; printf '%s' "$_out"
