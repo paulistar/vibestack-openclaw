@@ -1104,6 +1104,28 @@ O agente pai encerrou o turno antes do subagente devolver o resultado. Causa tí
 
 `openclaw cron add --agent <outro>` exige `--session isolated`. Só o agente default (`main`) aceita `--session main`. Reescreve o comando com `--session isolated`.
 
+### `scope upgrade pending approval` / `pairing required: device is asking for more scopes`
+
+Qualquer comando que fale com o gateway (`cron`, `config set`, `devices`, etc.) trava com algo assim:
+
+```
+gateway connect failed: GatewayClientRequestError: scope upgrade pending approval (requestId: <uuid>)
+GatewayTransportError: gateway closed (1008): pairing required: device is asking for more scopes than currently approved
+```
+
+**Causa:** o seu device CLI está pareado com um conjunto de escopos (ex.: só `operator.write`), mas o comando que você rodou precisa de um escopo a mais (ex.: `operator.pairing`). O gateway não concede sozinho — ele abre um **pedido de upgrade pendente** e bloqueia as conexões até alguém aprovar.
+
+**Como resolver:**
+
+```bash
+openclaw devices list                 # mostra o(s) pedido(s) pendente(s) e o requestId
+openclaw devices approve <requestId>  # ou: openclaw devices approve --latest
+```
+
+Os avisos `gateway connect failed … Direct scope access failed; using local fallback` que aparecem durante o `approve` são esperados — é o CLI contornando o próprio bloqueio pra registrar a aprovação. Confirme com `openclaw devices list` (o pedido some e o device ganha o escopo novo) e refaça o comando original.
+
+> Alternativa: aprovar pela UI do Control em `:18789` (o device admin, que já tem `operator.approvals`/`operator.pairing`).
+
 ### JSON malformado em algum tool
 
 Já tem proteção: `--no-color --no-input` + normalização de `"No results."` → `[]` + `current_ad_account` sintético do env. Se ainda aparecer, o agente pode chamar a tool com `output_format="plain"` e a CLI manda texto cru (o agente parseia).
