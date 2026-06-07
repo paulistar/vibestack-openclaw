@@ -211,17 +211,33 @@ PYEOF
 # token e' o api_server (is_configured=True), e ele EXIGE API_SERVER_KEY pra
 # iniciar. Bind interno 0.0.0.0 (Docker publica em loopback no host); a auth
 # e' garantida pela API_SERVER_KEY, entao nao precisa de socat (ao contrario do dashboard).
+#
+# IMPORTANTE: usar 'hermes gateway RUN' (foreground, recomendado p/ Docker) — NAO
+# 'hermes gateway' sozinho nem 'start' (que e' pra servico systemd/launchd e se
+# recusa dentro de container). O 'run' e' quem roda o loop do gateway COM o
+# dispatcher embutido do Kanban (tick de 60s). Sem ele, as tasks ficam presas em
+# 'ready' e o 'hermes gateway status' reporta "not running".
+#
+# Como aqui o processo PRINCIPAL do container e' o OpenClaw (nao o Hermes), o
+# gateway do Hermes nao tem supervisor: se cair, ninguem reergue. Por isso o
+# envolvemos num laco de AUTO-RESTART (reinicia em 5s se sair). HERMES_ACCEPT_HOOKS=1
+# evita travar num prompt de hook sem TTY (canal headless, igual approvals=off).
 if [ -z "${API_SERVER_KEY:-}" ]; then
   echo "[entrypoint] AVISO: API_SERVER_KEY vazio — Hermes api_server NAO vai subir. Defina HERMES_API_SERVER_KEY no .env."
 else
   (
-    HERMES_HOME="$HERMES_HOME" \
-    API_SERVER_HOST=0.0.0.0 \
-    API_SERVER_PORT="${HERMES_API_PORT:-8642}" \
-      hermes gateway
+    while true; do
+      HERMES_HOME="$HERMES_HOME" \
+      API_SERVER_HOST=0.0.0.0 \
+      API_SERVER_PORT="${HERMES_API_PORT:-8642}" \
+      HERMES_ACCEPT_HOOKS=1 \
+        hermes gateway run
+      echo "[entrypoint] AVISO: 'hermes gateway run' saiu (code $?) — reiniciando em 5s"
+      sleep 5
+    done
   ) >/var/log/hermes.log 2>&1 &
   HERMES_PID=$!
-  echo "[entrypoint] hermes gateway iniciado em 0.0.0.0:${HERMES_API_PORT:-8642} (pid=$HERMES_PID, log=/var/log/hermes.log)"
+  echo "[entrypoint] hermes gateway run (auto-restart) iniciado em 0.0.0.0:${HERMES_API_PORT:-8642} (pid=$HERMES_PID, log=/var/log/hermes.log)"
   echo "[entrypoint] LEMBRE: configure o provider/modelo do Hermes (docker exec -it <cont> hermes model) — o build nao baka provider."
 fi
 
