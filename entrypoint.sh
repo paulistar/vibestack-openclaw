@@ -225,14 +225,21 @@ PYEOF
 if [ -z "${API_SERVER_KEY:-}" ]; then
   echo "[entrypoint] AVISO: API_SERVER_KEY vazio — Hermes api_server NAO vai subir. Defina HERMES_API_SERVER_KEY no .env."
 else
+  # -p default: FIXA o gateway no profile 'default'. Sem isso, o gateway sobe sob
+  # o profile ATIVO no boot — e se alguem deu 'hermes profile use <cargo>' antes de
+  # reiniciar, o gateway (e o api_server 8642) subiria sob o profile errado, e
+  # 'hermes gateway status' (no profile default) acusaria "not running". O board do
+  # Kanban e' compartilhado (/root/.hermes/kanban.db), entao um unico gateway default
+  # ja' despacha tasks de QUALQUER assignee (spawna o profile de cada task).
+  HERMES_GATEWAY_PROFILE="${HERMES_GATEWAY_PROFILE:-default}"
   (
     while true; do
       HERMES_HOME="$HERMES_HOME" \
       API_SERVER_HOST=0.0.0.0 \
       API_SERVER_PORT="${HERMES_API_PORT:-8642}" \
       HERMES_ACCEPT_HOOKS=1 \
-        hermes gateway run
-      echo "[entrypoint] AVISO: 'hermes gateway run' saiu (code $?) — reiniciando em 5s"
+        hermes -p "$HERMES_GATEWAY_PROFILE" gateway run
+      echo "[entrypoint] AVISO: 'hermes gateway run' (profile=$HERMES_GATEWAY_PROFILE) saiu (code $?) — reiniciando em 5s"
       sleep 5
     done
   ) >/var/log/hermes.log 2>&1 &
