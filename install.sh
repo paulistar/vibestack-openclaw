@@ -30,6 +30,17 @@ as_root() {
   else err "Sem root e sem sudo — rode como root ou instale o sudo. Comando: $*"; return 1; fi
 }
 
+# atualiza o indice de pacotes do apt uma unica vez (memoizado).
+# No-op em distros sem apt-get. Chamado antes de qualquer 'apt-get install'
+# pra garantir que os repositorios Linux estejam atualizados numa maquina nova.
+APT_UPDATED=0
+apt_refresh() {
+  command -v apt-get >/dev/null 2>&1 || return 0
+  [ "$APT_UPDATED" = "1" ] && return 0
+  info "Atualizando indice de pacotes do Linux (apt-get update)..."
+  as_root apt-get update -y && APT_UPDATED=1
+}
+
 # garante o git instalado; instala via gerenciador de pacotes se faltar.
 # Self-contained (detecta o SO via uname) pra poder ser chamada ja' no
 # bootstrap, antes da deteccao de SO do passo 1.
@@ -39,7 +50,7 @@ ensure_git() {
   case "$(uname -s)" in
     Linux*)
       if command -v apt-get >/dev/null 2>&1; then
-        as_root apt-get update -y && as_root apt-get install -y git
+        apt_refresh && as_root apt-get install -y git
       elif command -v dnf >/dev/null 2>&1; then as_root dnf install -y git
       elif command -v yum >/dev/null 2>&1; then as_root yum install -y git
       elif command -v pacman >/dev/null 2>&1; then as_root pacman -Sy --noconfirm git
@@ -207,11 +218,7 @@ if ! docker compose version >/dev/null 2>&1; then
   if [ "$OS" = "linux" ]; then
     warn "Plugin 'docker compose' ausente — tentando instalar docker-compose-plugin."
     if command -v apt-get >/dev/null 2>&1; then
-      if [ "$(id -u)" -eq 0 ]; then
-        apt-get update -y && apt-get install -y docker-compose-plugin
-      elif command -v sudo >/dev/null 2>&1; then
-        sudo apt-get update -y && sudo apt-get install -y docker-compose-plugin
-      fi
+      apt_refresh && as_root apt-get install -y docker-compose-plugin
     fi
   fi
   if ! docker compose version >/dev/null 2>&1; then
