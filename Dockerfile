@@ -65,7 +65,12 @@ RUN mkdir -p /var/lib/ollama
 RUN if [ "$INSTALL_LMSTUDIO" = "true" ]; then \
       curl -fsSL https://lmstudio.ai/install.sh | bash \
       && ln -sf /root/.lmstudio/bin/lms /usr/local/bin/lms \
-      && mkdir -p /root/.lmstudio/models; \
+      && mkdir -p /root/.lmstudio/models \
+      && echo "[build] bootstrap do LM Studio (baixa/extrai o runtime e materializa o binario)..." \
+      && (lms daemon up >/tmp/lms-bootstrap.log 2>&1 || true) \
+      && for i in $(seq 1 90); do lms ls >/dev/null 2>&1 && break; sleep 2; done \
+      && (lms daemon down >/dev/null 2>&1 || true) \
+      && (lms version >/dev/null 2>&1 && echo "[build] LM Studio OK" || echo "[build] AVISO: bootstrap do LM Studio nao confirmou — o 1o boot fara o setup"); \
     else \
       echo "[build] INSTALL_LMSTUDIO=$INSTALL_LMSTUDIO -> pulando LM Studio"; \
     fi

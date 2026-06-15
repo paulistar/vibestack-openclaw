@@ -12,11 +12,12 @@ set -e
 #   - LM Studio -> daemon llmster + server OpenAI-compat na 1234.
 # Portas distintas: se ambos estiverem instalados, sobem os dois sem conflito.
 # Os helpers (start-ollama / start-lmstudio) sao idempotentes e tambem servem
-# para (re)start manual via `docker compose exec`. set -e desligado em volta
-# para que a falha de um backend nao derrube o boot do container.
+# para (re)start manual via `docker compose exec`. Rodam em BACKGROUND para nao
+# bloquear o boot do gateway — o LM Studio pode levar 1-2 min no 1o uso (extracao
+# do runtime). set -e desligado em volta para que a falha de um nao derrube o boot.
 set +e
-if command -v ollama >/dev/null 2>&1; then start-ollama; fi
-if command -v lms >/dev/null 2>&1; then start-lmstudio; fi
+if command -v ollama >/dev/null 2>&1; then start-ollama & fi
+if command -v lms >/dev/null 2>&1; then start-lmstudio & fi
 set -e
 
 # --- Registro de MCP servers (Infrastructure as Code via CLI) -------------

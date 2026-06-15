@@ -628,7 +628,9 @@ Modelos ficam em `/root/.ollama` no host (volume), persistem entre rebuilds. Sug
 
 ### LM Studio
 
-Server OpenAI-compatível em `http://127.0.0.1:1234/v1`. Baixe (do Hugging Face) e carregue um modelo:
+Server OpenAI-compatível em `http://127.0.0.1:1234/v1`. O `lms` é um binário grande (~750 MB) que se materializa no primeiro uso; o build já faz esse bootstrap, mas se o server não responder logo após subir o container, espere 1-2 min ou rode `docker compose exec openclaw-vibestack start-lmstudio` de novo (é idempotente).
+
+Baixe (do Hugging Face) e carregue um modelo:
 
 ```bash
 docker compose exec openclaw-vibestack lms get qwen2.5-7b-instruct
