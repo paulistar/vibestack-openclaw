@@ -67,8 +67,8 @@ O entrypoint registra o MCP automaticamente no boot via `openclaw mcp set`, prop
 ## Pré-requisitos
 
 - Uma VPS Linux (recomendado Ubuntu 22.04+ ou Debian 12+).
-  - **RAM**: 4GB mínimo (2GB faz build do openclaw cair com OOM). 8GB+ confortável se for rodar Ollama com modelo grande.
-  - **Disco**: 20GB+ (imagem ~3GB, modelos do Ollama 2–8GB cada).
+  - **RAM**: 4GB mínimo (2GB faz build do openclaw cair com OOM). 8GB+ confortável se for rodar modelo local grande (Ollama ou LM Studio).
+  - **Disco**: 20GB+ (imagem ~3GB; +~1GB se instalar o LM Studio; modelos locais 2–8GB cada).
 - SSH key configurada no seu laptop pra acessar a VPS sem senha.
 - (Opcional, pra Meta Ads) Conta no Meta Business Manager com permissão de admin.
 
@@ -89,8 +89,8 @@ Há **duas formas de instalar**. As duas chegam no mesmo resultado (imagem build
 O `install.sh` é **idempotente** (pode rodar de novo sem quebrar nada) e cuida de tudo. Em detalhe, ele:
 
 1. **Verifica/instala o Docker** — no Linux instala via `get.docker.com`; no Mac/Windows detecta e aponta o download do Docker Desktop.
-2. **Resolve os diretórios de dados pelo seu SO** — usa `~/.openclaw`, `~/.ollama` e `~/.hermes`. No Docker Desktop (Mac/Windows) isso funciona sem mexer no File Sharing; na VPS (`HOME=/root`) resolve pro mesmo `/root/.openclaw` de sempre. **É isso que evita o erro** `mounts denied: the path /root/.openclaw is not shared from the host`.
-3. **Cria/atualiza o `.env`** — copia de `.env.example` se faltar, **pergunta os valores no terminal** (porta, Meta Ads, B2…) na primeira vez, e grava os data dirs resolvidos no passo 2. Não sobrescreve valores que você já preencheu.
+2. **Resolve os diretórios de dados pelo seu SO** — usa `~/.openclaw`, `~/.ollama`, `~/.hermes`, `~/.lmstudio` etc. No Docker Desktop (Mac/Windows) isso funciona sem mexer no File Sharing; na VPS (`HOME=/root`) resolve pro mesmo `/root/.openclaw` de sempre. **É isso que evita o erro** `mounts denied: the path /root/.openclaw is not shared from the host`.
+3. **Cria/atualiza o `.env`** — copia de `.env.example` se faltar, **pergunta os valores no terminal** (porta, **qual backend de modelos locais instalar — Ollama, LM Studio ou ambos**, Meta Ads, B2…) na primeira vez, e grava os data dirs resolvidos no passo 2. Não sobrescreve valores que você já preencheu. A escolha de backend vira os build args `INSTALL_OLLAMA` / `INSTALL_LMSTUDIO` (só o escolhido é baixado na imagem); rodar de novo **oferece adicionar o que falta**.
 4. **Gera os segredos** (se vazios) — `OPENCLAW_GATEWAY_TOKEN`, `GOG_KEYRING_PASSWORD` e `HERMES_API_SERVER_KEY`. Ao final, **exibe as chaves geradas**, dizendo onde ficam (no `.env`) e onde usar cada uma (ex.: a `HERMES_API_SERVER_KEY` é o Bearer token pra conectar um frontend na API do Hermes).
 5. **Cria os diretórios de dados** físicos (`mkdir -p`) no host.
 6. **Normaliza o `entrypoint.sh` pra LF** — evita o erro `entrypoint not found` em checkouts feitos no Windows.
@@ -149,8 +149,8 @@ cd vibestack-openclaw
 
 # 2. Crie os diretórios de dados (volumes persistentes) no SEU SO.
 #    Mac/Windows:
-mkdir -p ~/.openclaw ~/.ollama ~/.hermes
-#    VPS (HOME=/root) — pule, ja' e' /root/.openclaw etc. (ou: mkdir -p /root/.openclaw /root/.ollama /root/.hermes)
+mkdir -p ~/.openclaw ~/.ollama ~/.hermes ~/.lmstudio
+#    VPS (HOME=/root) — pule, ja' e' /root/.openclaw etc. (ou: mkdir -p /root/.openclaw /root/.ollama /root/.hermes /root/.lmstudio)
 
 # 3. Crie o .env a partir do exemplo
 cp .env.example .env
@@ -171,6 +171,7 @@ Agora **edite o `.env`** e ajuste:
   ```
   (Na VPS: `/root/.openclaw`, `/root/.ollama`, `/root/.hermes`.) Se deixar `/root/...` no Mac, o `docker compose up` falha com `mounts denied: the path /root/.hermes is not shared from the host`.
 - **Segredos** — cole os 3 valores gerados no passo 4 em `OPENCLAW_GATEWAY_TOKEN`, `GOG_KEYRING_PASSWORD` e `HERMES_API_SERVER_KEY`.
+- **Backend de modelos locais** — `INSTALL_OLLAMA` / `INSTALL_LMSTUDIO` (`true`/`false`) decidem o que o build baixa (padrão: Ollama `true`, LM Studio `false`); o que for instalado sobe sozinho no boot. Se ligar o LM Studio, o `LMSTUDIO_DATA_DIR` é onde os modelos persistem (aponte pro `~/.lmstudio` criado no passo 2).
 - **Meta Ads / B2 (opcional)** — preencha `META_ACCESS_TOKEN` (+ `META_AD_ACCOUNT_ID`) e os `B2_*` se for usar as tools de Meta Ads / media-editor. Veja [Passo 5](#passo-5--opcional-gerar-o-token-da-meta-ads) e [Passo 6](#passo-6--configurar-env).
 
 ```bash
@@ -253,7 +254,7 @@ cd vibestack-openclaw
 
 ### Passo 5 — (Opcional) Gerar o token da Meta Ads
 
-**Pule esse passo se NÃO for usar o MCP da Meta Ads.** Vai poder usar o OpenClaw + Ollama normalmente, sem as 60 tools da Meta.
+**Pule esse passo se NÃO for usar o MCP da Meta Ads.** Vai poder usar o OpenClaw + modelo local (Ollama / LM Studio) normalmente, sem as 60 tools da Meta.
 
 Siga o [guia oficial Meta Ads CLI / Primeiros passos](https://developers.facebook.com/documentation/ads-commerce/ads-ai-connectors/ads-cli/setup/get-started). Resumo:
 
@@ -293,6 +294,11 @@ Preencha **no mínimo**:
 OPENCLAW_GATEWAY_TOKEN=<resultado-do-openssl>
 GOG_KEYRING_PASSWORD=<outro-resultado-do-openssl>
 
+# Backend de modelos locais a instalar na imagem (o instalado sobe no boot).
+# Só o que estiver 'true' é baixado. Adicionar o outro depois pede novo build.
+INSTALL_OLLAMA=true
+INSTALL_LMSTUDIO=false
+
 # Só preenche se fez o Passo 5
 META_ACCESS_TOKEN=EAA...
 META_AD_ACCOUNT_ID=act_123456789   # ou só 123456789 — o entrypoint adiciona o 'act_' se faltar
@@ -310,7 +316,7 @@ openssl rand -hex 32   # roda outra pro keyring password
 > Atalho: `./install.sh` já faz o `mkdir` dos diretórios de dados e o `docker compose build` (parando antes do `up`). Se rodou o instalador, pule direto pro `docker compose up -d`.
 
 ```bash
-mkdir -p /root/.openclaw /root/.ollama   # dispensável se usou ./install.sh
+mkdir -p /root/.openclaw /root/.ollama /root/.lmstudio   # dispensável se usou ./install.sh
 
 docker compose build
 docker compose up -d
@@ -402,7 +408,7 @@ http://127.0.0.1:18789
 Cole o `OPENCLAW_GATEWAY_TOKEN` do `.env` quando pedir.
 
 Na UI:
-1. **Models** → confirma se aparece a opção Ollama (URL default `http://127.0.0.1:11434`). Se quiser usar API paga (Anthropic/OpenAI), adiciona aqui também.
+1. **Models** → confirma o backend local que você instalou: **Ollama** (`http://127.0.0.1:11434`) e/ou **LM Studio** (`http://127.0.0.1:1234/v1`). Se quiser usar API paga (Anthropic/OpenAI), adiciona aqui também.
 2. **MCP Servers** → você já deve ver `meta-ads` listado com ~70 tools. Se não aparecer, repete o Passo 9.
 3. **Agents** → **New Agent** → escolhe o model, marca o MCP `meta-ads` como disponível, dá nome ("AdsOps", por exemplo), e descreve o que ele faz no system prompt.
 
@@ -890,7 +896,8 @@ Pronto — `atlascloud` aparece em `openclaw mcp list` (e no Hermes). Por que AP
 ```
 .
 ├── Dockerfile               # node:24 + openclaw + ollama + meta-ads CLI + middleware + hermes
-├── entrypoint.sh            # ollama serve + openclaw mcp set + hermes gateway/dashboard + exec CMD
+├── entrypoint.sh            # sobe backend(s) local(is) instalado(s) + openclaw mcp set + hermes gateway/dashboard + exec CMD
+├── scripts/                 # start-ollama / start-lmstudio / models-status (boot + uso manual)
 ├── docker-compose.yml       # openclaw-vibestack + evolution-go + postgres (env, volumes, portas)
 ├── middleware/
 │   ├── meta_ads_cli_mcp.py        # MCP — 70 tools Meta Ads (CLI + Graph API)
