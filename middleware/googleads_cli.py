@@ -100,7 +100,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("gaql", "[leitura] executa uma query GAQL arbitraria")
     sp.add_argument("query", help="ex.: 'SELECT campaign.id, campaign.name FROM campaign LIMIT 10'")
 
+    add("conversions", "[leitura] lista acoes de conversao")
+
     # ---- Escritas ---------------------------------------------------------
+    sp = add("create-conversion", "[escrita] cria acao de conversao (ex.: compra Hotmart)")
+    sp.add_argument("--name", required=True)
+    sp.add_argument("--category", default="PURCHASE", help="PURCHASE|LEAD|SIGN_UP|BEGIN_CHECKOUT|DEFAULT")
+    sp.add_argument("--type", default="WEBPAGE", dest="action_type")
+    sp.add_argument("--status", default="ENABLED")
+    sp.add_argument("--default-value", type=float, dest="default_value")
+    sp.add_argument("--counting", default="ONE_PER_CLICK", dest="counting_type",
+                    choices=["ONE_PER_CLICK", "MANY_PER_CLICK"])
+
     sp = add("create-budget", "[escrita] cria orcamento diario")
     sp.add_argument("--name", required=True)
     sp.add_argument("--daily", type=float, required=True, help="valor/dia na moeda da conta (ex.: 50.0)")
@@ -128,6 +139,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("id")
     sp = add("remove-campaign", "[escrita] remove campanha (DESTRUTIVO)")
     sp.add_argument("id")
+
+    sp = add("add-geo-language", "[escrita] segmenta campanha por local/idioma")
+    sp.add_argument("--campaign", required=True, help="campaign_id")
+    sp.add_argument("--location", action="append", default=[], help="geoTargetConstant id (2076=Brasil). Repita.")
+    sp.add_argument("--language", action="append", default=[], help="languageConstant id (1014=PT, 1000=EN). Repita.")
+
+    sp = add("add-campaign-negatives", "[escrita] negativas em nivel de campanha (todos os grupos)")
+    sp.add_argument("--campaign", required=True, help="campaign_id")
+    sp.add_argument("--keyword", action="append", default=[], required=True, help="repita p/ varias")
+    sp.add_argument("--match", default="BROAD", choices=["BROAD", "PHRASE", "EXACT"])
 
     sp = add("update-budget", "[escrita] atualiza nome/valor de orcamento")
     sp.add_argument("id")
@@ -232,8 +253,15 @@ def dispatch(args) -> int:
         return _out(g.search_terms_report(date_preset=args.preset, limit=args.limit, customer_id=cid))
     if cmd == "gaql":
         return _out(g.gaql_search(args.query, customer_id=cid))
+    if cmd == "conversions":
+        return _out(g.list_conversion_actions(customer_id=cid))
 
     # Escritas
+    if cmd == "create-conversion":
+        return _out(g.create_conversion_action(name=args.name, category=args.category,
+                                               action_type=args.action_type, status=args.status,
+                                               default_value=args.default_value,
+                                               counting_type=args.counting_type, customer_id=cid))
     if cmd == "create-budget":
         return _out(g.create_campaign_budget(name=args.name, daily_budget_units=args.daily,
                                              delivery_method=args.delivery,
@@ -252,6 +280,12 @@ def dispatch(args) -> int:
         return _out(g.resume_campaign(args.id, customer_id=cid))
     if cmd == "remove-campaign":
         return _out(g.remove_campaign(args.id, customer_id=cid))
+    if cmd == "add-geo-language":
+        return _out(g.add_geo_language(campaign_id=args.campaign, location_ids=args.location,
+                                       language_ids=args.language, customer_id=cid))
+    if cmd == "add-campaign-negatives":
+        return _out(g.add_campaign_negative_keywords(campaign_id=args.campaign, keywords=args.keyword,
+                                                     match_type=args.match, customer_id=cid))
     if cmd == "update-budget":
         return _out(g.update_campaign_budget(args.id, name=args.name,
                                              daily_budget_units=args.daily, customer_id=cid))

@@ -422,6 +422,92 @@ def remove_campaign(campaign_id: str, customer_id: str | None = None) -> Any:
 
 
 # ============================================================
+# Critérios de campanha (geo / idioma / negativas de campanha)
+# ============================================================
+
+@mcp.tool()
+def add_geo_language(
+    campaign_id: str,
+    location_ids: list[str] | None = None,
+    language_ids: list[str] | None = None,
+    customer_id: str | None = None,
+) -> Any:
+    """Adiciona segmentação de LOCALIZAÇÃO e/ou IDIOMA a uma campanha.
+
+    location_ids: ids de geoTargetConstants (ex.: ['2076'] = Brasil).
+    language_ids: ids de languageConstants (ex.: ['1014'] = Português, '1000' = Inglês).
+    Cria CampaignCriterion positivos. Sem isso a campanha mira o mundo todo /
+    todos os idiomas — SEMPRE aplicar antes de ativar campanhas locais.
+    """
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    if not cid:
+        return {"error": "customer_id ausente"}
+    location_ids = location_ids or []
+    language_ids = language_ids or []
+    if not location_ids and not language_ids:
+        return {"error": "informe location_ids e/ou language_ids"}
+    try:
+        camp_path = client.get_service("CampaignService").campaign_path(cid, campaign_id)
+        ops = []
+        for loc in location_ids:
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = camp_path
+            crit.location.geo_target_constant = f"geoTargetConstants/{str(loc).strip()}"
+            ops.append(op)
+        for lang in language_ids:
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = camp_path
+            crit.language.language_constant = f"languageConstants/{str(lang).strip()}"
+            ops.append(op)
+        return _mutate("CampaignCriterionService", "mutate_campaign_criteria", ops, cid)
+    except Exception as e:  # noqa: BLE001
+        from google.ads.googleads.errors import GoogleAdsException  # type: ignore
+        if isinstance(e, GoogleAdsException):
+            return _gerr(e)
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def add_campaign_negative_keywords(
+    campaign_id: str,
+    keywords: list[str],
+    match_type: str = "BROAD",
+    customer_id: str | None = None,
+) -> Any:
+    """Adiciona palavras-chave NEGATIVAS em nível de CAMPANHA (valem p/ todos os
+    grupos). Ideal para negativas globais (grátis, pdf, torrent...) e negativas
+    cruzadas entre campanhas. match_type: BROAD | PHRASE | EXACT."""
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    if not cid:
+        return {"error": "customer_id ausente"}
+    try:
+        camp_path = client.get_service("CampaignService").campaign_path(cid, campaign_id)
+        ops = []
+        for kw in keywords:
+            op = client.get_type("CampaignCriterionOperation")
+            crit = op.create
+            crit.campaign = camp_path
+            crit.negative = True
+            crit.keyword.text = kw
+            crit.keyword.match_type = client.enums.KeywordMatchTypeEnum[match_type.upper()]
+            ops.append(op)
+        return _mutate("CampaignCriterionService", "mutate_campaign_criteria", ops, cid)
+    except Exception as e:  # noqa: BLE001
+        from google.ads.googleads.errors import GoogleAdsException  # type: ignore
+        if isinstance(e, GoogleAdsException):
+            return _gerr(e)
+        return {"error": str(e)}
+
+
+# ============================================================
 # Orçamentos (CampaignBudget)
 # ============================================================
 
@@ -830,6 +916,67 @@ def remove_keyword(ad_group_id: str, criterion_id: str, customer_id: str | None 
     op = client.get_type("AdGroupCriterionOperation")
     op.remove = client.get_service("AdGroupCriterionService").ad_group_criterion_path(cid, ad_group_id, criterion_id)
     return _mutate("AdGroupCriterionService", "mutate_ad_group_criteria", [op], cid)
+
+
+# ============================================================
+# Conversões (ConversionAction)
+# ============================================================
+
+@mcp.tool()
+def list_conversion_actions(customer_id: str | None = None) -> Any:
+    """Lista as ações de conversão (id, nome, status, tipo, categoria)."""
+    q = (
+        "SELECT conversion_action.id, conversion_action.name, conversion_action.status, "
+        "conversion_action.type, conversion_action.category "
+        "FROM conversion_action ORDER BY conversion_action.id DESC"
+    )
+    return _rows(q, customer_id)
+
+
+@mcp.tool()
+def create_conversion_action(
+    name: str,
+    category: str = "PURCHASE",
+    action_type: str = "WEBPAGE",
+    status: str = "ENABLED",
+    default_value: float | None = None,
+    always_use_default_value: bool = False,
+    counting_type: str = "ONE_PER_CLICK",
+    customer_id: str | None = None,
+) -> Any:
+    """Cria uma ação de conversão (ex.: compra de curso via Hotmart).
+
+    category: PURCHASE | LEAD | SIGN_UP | BEGIN_CHECKOUT | DEFAULT ...
+    action_type: WEBPAGE (tag no site) é o padrão. status: ENABLED | PAUSED.
+    counting_type: ONE_PER_CLICK (1 por clique, ideal p/ lead/venda de curso) |
+                   MANY_PER_CLICK (ecommerce). Ao criar WEBPAGE, a API gera os
+                   tag_snippets (global tag + event snippet) — leia depois com
+                   uma GAQL em conversion_action.tag_snippets p/ instalar/ligar
+                   no Hotmart (Conversion ID + Label).
+    """
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    if not cid:
+        return {"error": "customer_id ausente"}
+    try:
+        op = client.get_type("ConversionActionOperation")
+        ca = op.create
+        ca.name = name
+        ca.type_ = client.enums.ConversionActionTypeEnum[action_type.upper()]
+        ca.category = client.enums.ConversionActionCategoryEnum[category.upper()]
+        ca.status = client.enums.ConversionActionStatusEnum[status.upper()]
+        ca.counting_type = client.enums.ConversionActionCountingTypeEnum[counting_type.upper()]
+        if default_value is not None:
+            ca.value_settings.default_value = float(default_value)
+        ca.value_settings.always_use_default_value = bool(always_use_default_value)
+        return _mutate("ConversionActionService", "mutate_conversion_actions", [op], cid)
+    except Exception as e:  # noqa: BLE001
+        from google.ads.googleads.errors import GoogleAdsException  # type: ignore
+        if isinstance(e, GoogleAdsException):
+            return _gerr(e)
+        return {"error": str(e)}
 
 
 # ============================================================
