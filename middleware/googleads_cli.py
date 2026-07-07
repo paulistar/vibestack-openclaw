@@ -101,6 +101,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("query", help="ex.: 'SELECT campaign.id, campaign.name FROM campaign LIMIT 10'")
 
     add("conversions", "[leitura] lista acoes de conversao")
+    add("conversion-goals", "[leitura] lista metas de conversao da conta (biddable)")
+
+    sp = add("set-goal", "[escrita] define biddability de uma meta de conversao")
+    sp.add_argument("--category", required=True, help="PURCHASE|PAGE_VIEW|BEGIN_CHECKOUT|...")
+    sp.add_argument("--origin", default="WEBSITE", help="WEBSITE|APP|YOUTUBE_HOSTED|...")
+    grp = sp.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--biddable", dest="biddability", action="store_true")
+    grp.add_argument("--not-biddable", dest="biddability", action="store_false")
 
     sp = add("keyword-ideas", "[leitura] ideias de palavras-chave + volume (Keyword Planner)")
     sp.add_argument("--seed", action="append", default=[], help="termo semente (repita)")
@@ -142,6 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--status", help="ENABLED|PAUSED|REMOVED")
     sp.add_argument("--url-suffix", dest="url_suffix",
                     help="sufixo UTM anexado a todas as URLs finais (ex.: 'utm_source=google&utm_campaign=autonext')")
+    sp.add_argument("--bidding", help="MANUAL_CPC|MAXIMIZE_CONVERSIONS|MAXIMIZE_CONVERSION_VALUE|TARGET_SPEND")
 
     sp = add("pause-campaign", "[escrita] pausa campanha")
     sp.add_argument("id")
@@ -269,6 +278,11 @@ def dispatch(args) -> int:
         return _out(g.gaql_search(args.query, customer_id=cid))
     if cmd == "conversions":
         return _out(g.list_conversion_actions(customer_id=cid))
+    if cmd == "conversion-goals":
+        return _out(g.list_customer_conversion_goals(customer_id=cid))
+    if cmd == "set-goal":
+        return _out(g.set_customer_conversion_goal(category=args.category, origin=args.origin,
+                                                   biddability=args.biddability, customer_id=cid))
     if cmd == "keyword-ideas":
         return _out(g.keyword_ideas(seeds=args.seed, url=args.url, language_id=args.language,
                                     location_ids=(args.location or None), keyword_plan_network=args.network,
@@ -292,7 +306,8 @@ def dispatch(args) -> int:
                                       end_date=args.end, customer_id=cid))
     if cmd == "update-campaign":
         return _out(g.update_campaign(args.id, name=args.name, status=args.status,
-                                      final_url_suffix=args.url_suffix, customer_id=cid))
+                                      final_url_suffix=args.url_suffix,
+                                      bidding_strategy=args.bidding, customer_id=cid))
     if cmd == "pause-campaign":
         return _out(g.pause_campaign(args.id, customer_id=cid))
     if cmd == "resume-campaign":

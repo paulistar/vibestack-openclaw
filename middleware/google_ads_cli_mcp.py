@@ -363,14 +363,17 @@ def update_campaign(
     name: str | None = None,
     status: str | None = None,
     final_url_suffix: str | None = None,
+    bidding_strategy: str | None = None,
     customer_id: str | None = None,
 ) -> Any:
-    """Atualiza nome, status e/ou o sufixo de URL final de uma campanha.
+    """Atualiza nome, status, sufixo de URL final e/ou estratégia de lance.
 
     status: ENABLED | PAUSED | REMOVED.
     final_url_suffix: parâmetros anexados a TODAS as URLs finais da campanha (ex.:
     'utm_source=google&utm_medium=cpc&utm_campaign=autonext&utm_term={keyword}').
-    Aceita ValueTrack ({keyword}, {campaignid}, {adgroupid}, {creative}...).
+    bidding_strategy: MANUAL_CPC | MAXIMIZE_CONVERSIONS | MAXIMIZE_CONVERSION_VALUE |
+    TARGET_SPEND. Ao migrar p/ MAXIMIZE_CONVERSIONS, garanta que só a meta de compra
+    seja biddable (set_customer_conversion_goal), senão otimiza por visita/checkout.
     """
     client = _client()
     if isinstance(client, dict):
@@ -378,19 +381,49 @@ def update_campaign(
     cid = _resolve_cid(customer_id)
     if not cid:
         return {"error": "customer_id ausente"}
+    _BID_PATH = {
+        "MANUAL_CPC": "manual_cpc", "MAXIMIZE_CONVERSIONS": "maximize_conversions",
+        "MAXIMIZE_CONVERSION_VALUE": "maximize_conversion_value", "TARGET_SPEND": "target_spend",
+    }
     try:
-        from google.api_core import protobuf_helpers  # type: ignore
         service = client.get_service("CampaignService")
         op = client.get_type("CampaignOperation")
         c = op.update
         c.resource_name = service.campaign_path(cid, campaign_id)
+        # Monta o update_mask manualmente (o field_mask automático recursa em
+        # mensagens vazias de bidding e gera FIELD_HAS_SUBFIELDS).
+        paths = []
         if name is not None:
             c.name = name
+            paths.append("name")
         if status is not None:
             c.status = client.enums.CampaignStatusEnum[status.upper()]
+            paths.append("status")
         if final_url_suffix is not None:
             c.final_url_suffix = final_url_suffix
-        client.copy_from(op.update_mask, protobuf_helpers.field_mask(None, c._pb))
+            paths.append("final_url_suffix")
+        if bidding_strategy is not None:
+            bs = bidding_strategy.upper()
+            if bs not in _BID_PATH:
+                return {"error": f"bidding_strategy inválida: {bidding_strategy}"}
+            # As mensagens de lance têm subcampos → o mask precisa selecionar um
+            # subcampo (senão FIELD_HAS_SUBFIELDS). Selecionamos um subcampo neutro
+            # (valor 0 = sem alvo) para ativar a estratégia "pura".
+            if bs == "MAXIMIZE_CONVERSIONS":
+                c.maximize_conversions.target_cpa_micros = 0
+                paths.append("maximize_conversions.target_cpa_micros")
+            elif bs == "MAXIMIZE_CONVERSION_VALUE":
+                c.maximize_conversion_value.target_roas = 0
+                paths.append("maximize_conversion_value.target_roas")
+            elif bs == "TARGET_SPEND":
+                c.target_spend.cpc_bid_ceiling_micros = 0
+                paths.append("target_spend.cpc_bid_ceiling_micros")
+            else:  # MANUAL_CPC
+                c.manual_cpc.enhanced_cpc_enabled = False
+                paths.append("manual_cpc.enhanced_cpc_enabled")
+        if not paths:
+            return {"error": "nada para atualizar"}
+        op.update_mask.paths.extend(paths)
         return _mutate("CampaignService", "mutate_campaigns", [op], cid)
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
@@ -1010,6 +1043,52 @@ def create_conversion_action(
             ca.value_settings.default_value = float(default_value)
         ca.value_settings.always_use_default_value = bool(always_use_default_value)
         return _mutate("ConversionActionService", "mutate_conversion_actions", [op], cid)
+    except Exception as e:  # noqa: BLE001
+        from google.ads.googleads.errors import GoogleAdsException  # type: ignore
+        if isinstance(e, GoogleAdsException):
+            return _gerr(e)
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def list_customer_conversion_goals(customer_id: str | None = None) -> Any:
+    """Lista as metas de conversão da conta (categoria + origem). As biddable
+    são as que a estratégia de lance por conversão otimiza."""
+    q = ("SELECT customer_conversion_goal.category, customer_conversion_goal.origin "
+         "FROM customer_conversion_goal")
+    return _rows(q, customer_id)
+
+
+@mcp.tool()
+def set_customer_conversion_goal(
+    category: str,
+    origin: str,
+    biddability: bool,
+    customer_id: str | None = None,
+) -> Any:
+    """Define se uma meta de conversão (categoria+origem) é biddable na conta.
+
+    Ex.: set_customer_conversion_goal('PAGE_VIEW','WEBSITE',False) tira a visita de
+    página da otimização de lance, deixando só a compra. category: PURCHASE,
+    PAGE_VIEW, BEGIN_CHECKOUT, LEAD, OUTBOUND_CLICK, CONTACT, DOWNLOAD, ENGAGEMENT,
+    YOUTUBE_FOLLOW_ON_VIEWS... origin: WEBSITE, APP, YOUTUBE_HOSTED, STORE...
+    """
+    client = _client()
+    if isinstance(client, dict):
+        return client
+    cid = _resolve_cid(customer_id)
+    if not cid:
+        return {"error": "customer_id ausente"}
+    try:
+        op = client.get_type("CustomerConversionGoalOperation")
+        goal = op.update
+        goal.resource_name = (
+            f"customers/{cid}/customerConversionGoals/{category.upper()}~{origin.upper()}")
+        goal.biddable = bool(biddability)
+        # biddable False == default do proto; o field_mask automático nao pegaria.
+        op.update_mask.paths.append("biddable")
+        return _mutate("CustomerConversionGoalService",
+                       "mutate_customer_conversion_goals", [op], cid)
     except Exception as e:  # noqa: BLE001
         from google.ads.googleads.errors import GoogleAdsException  # type: ignore
         if isinstance(e, GoogleAdsException):
