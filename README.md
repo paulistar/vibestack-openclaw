@@ -892,7 +892,18 @@ Pronto — `atlascloud` aparece em `openclaw mcp list` (e no Hermes). Por que AP
 
 ## Google Ads (MCP) — auth OAuth2 + developer token
 
-Ao contrário da Meta (que tem a CLI oficial `meta`), **o Google Ads não tem CLI oficial** equivalente. Então este MCP (`google_ads_cli_mcp.py`) fala direto com a Google Ads API pela **biblioteca cliente oficial** `google-ads`: leitura via GAQL, escrita via `mutate`. Dá ao agente ~30 tools read+write — campanhas, orçamentos, grupos de anúncios, anúncios RSA, palavras-chave e relatórios (`get_insights`, `gaql_search`, `search_terms_report`). Como no Meta, `create_*` sai **PAUSED** por padrão.
+Ao contrário da Meta (que tem a CLI oficial `meta`), **o Google Ads não tem CLI oficial** equivalente. Então este MCP (`google_ads_cli_mcp.py`) fala direto com a Google Ads API pela **biblioteca cliente oficial** `google-ads`: leitura via GAQL, escrita via `mutate`. Dá ao agente ~39 tools read+write — campanhas, orçamentos, grupos de anúncios, anúncios RSA, palavras-chave e relatórios (`get_insights`, `gaql_search`, `search_terms_report`). Como no Meta, `create_*` sai **PAUSED** por padrão.
+
+Além do CRUD básico, o MCP cobre o fluxo completo de gestão de tráfego:
+
+| Capacidade | Tool(s) MCP / comando CLI |
+|---|---|
+| **Segmentação geo/idioma** | `add_geo_language` / `add-geo-language --location 2076 --language 1014` (Brasil + PT) |
+| **Negativas de campanha** (todos os grupos) | `add_campaign_negative_keywords` / `add-campaign-negatives` |
+| **Conversões** (ex.: compra via Hotmart) | `create_conversion_action`, `list_conversion_actions` / `create-conversion`, `conversions` |
+| **Keyword Planner** (volume de busca + concorrência) | `keyword_ideas` / `keyword-ideas --seed ... --url ...` |
+| **Editar URL final de anúncio** | `update_ad` / `update-ad --ad <id> --url ...` |
+| **UTM por campanha** (sufixo de URL final) | `update_campaign(final_url_suffix=...)` / `update-campaign <id> --url-suffix "utm_source=google&..."` |
 
 A parte trabalhosa é a auth OAuth2. São 4 credenciais + 2 IDs de conta:
 
@@ -926,13 +937,19 @@ docker compose exec openclaw-vibestack googleads accounts          # contas aces
 docker compose exec openclaw-vibestack googleads campaigns --limit 20
 docker compose exec openclaw-vibestack googleads insights --preset LAST_30_DAYS
 docker compose exec openclaw-vibestack googleads gaql "SELECT campaign.id, campaign.name FROM campaign LIMIT 10"
-# também: whoami, campaign <id>, budgets, ad-groups, ads, keywords, search-terms
+docker compose exec openclaw-vibestack googleads keyword-ideas --seed "curso n8n" --url "https://autonext.ericorenato.com.br" --location 2076 --language 1014
+# também: whoami, campaign <id>, budgets, ad-groups, ads, keywords, search-terms, conversions
 
 # --- escritas (liberam com o Basic access) ---
-docker compose exec openclaw-vibestack googleads create-campaign --name "Teste API" --daily 50   # nasce PAUSED
-docker compose exec openclaw-vibestack googleads pause-campaign 23207245140
+docker compose exec openclaw-vibestack googleads create-campaign --name "Teste API" --daily 50 --channel SEARCH --bidding TARGET_SPEND   # nasce PAUSED
+docker compose exec openclaw-vibestack googleads add-geo-language --campaign 123 --location 2076 --language 1014 --language 1000  # Brasil + PT/EN
 docker compose exec openclaw-vibestack googleads add-keywords --ad-group 123 --keyword "curso ia" --keyword "trafego pago" --match PHRASE
-# também: create-budget, update-campaign, resume/remove-campaign, create/pause/remove ad-group,
+docker compose exec openclaw-vibestack googleads add-campaign-negatives --campaign 123 --keyword "gratis" --keyword "industrial" --match BROAD
+docker compose exec openclaw-vibestack googleads create-conversion --name "Compra Curso" --category PURCHASE   # gera o tag/label p/ Hotmart
+docker compose exec openclaw-vibestack googleads update-ad --ad 456 --url "https://ericorenato.com.br"
+docker compose exec openclaw-vibestack googleads update-campaign 123 --url-suffix "utm_source=google&utm_medium=cpc&utm_campaign=autonext&utm_term={keyword}"
+docker compose exec openclaw-vibestack googleads pause-campaign 23207245140
+# também: create-budget, resume/remove-campaign, create/pause/remove ad-group,
 #         create/pause/remove-ad, add-negative-keywords, pause/remove-keyword, update-budget/ad-group
 ```
 
