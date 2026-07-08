@@ -416,7 +416,9 @@ def update_campaign(
                 c.maximize_conversion_value.target_roas = 0
                 paths.append("maximize_conversion_value.target_roas")
             elif bs == "TARGET_SPEND":
-                c.target_spend.cpc_bid_ceiling_micros = 0
+                # teto de CPC alto (R$10) só p/ satisfazer o field_mask; nao limita
+                # na pratica (CPC roda ~R$1-2). 0 mataria a entrega.
+                c.target_spend.cpc_bid_ceiling_micros = 10_000_000
                 paths.append("target_spend.cpc_bid_ceiling_micros")
             else:  # MANUAL_CPC
                 c.manual_cpc.enhanced_cpc_enabled = False
