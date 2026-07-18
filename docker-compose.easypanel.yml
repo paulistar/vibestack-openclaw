@@ -1,0 +1,133 @@
+# Compose adaptado para EasyPanel (deploy via Git).
+# Diferenças vs docker-compose.yml:
+# - volumes nomeados (persistência gerenciada pelo Docker/EasyPanel)
+# - portas publicadas em 0.0.0.0 (proxy/domínio do EasyPanel)
+# - mesmo env_file/.env injetado pelo EasyPanel (services.compose.updateEnv)
+
+services:
+  openclaw-vibestack:
+    image: ${OPENCLAW_IMAGE:-vibestack-openclaw:latest}
+    build:
+      context: .
+      args:
+        OPENCLAW_REF: ${OPENCLAW_REF:-main}
+        INSTALL_OLLAMA: ${INSTALL_OLLAMA:-true}
+        INSTALL_LMSTUDIO: ${INSTALL_LMSTUDIO:-false}
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_BIND=${OPENCLAW_GATEWAY_BIND:-lan}
+      - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT:-18789}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - GOG_KEYRING_PASSWORD=${GOG_KEYRING_PASSWORD}
+      - OLLAMA_MODELS=/var/lib/ollama
+      - ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      - AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      - GOOGLE_ADS_DEVELOPER_TOKEN=${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+      - GOOGLE_ADS_CLIENT_ID=${GOOGLE_ADS_CLIENT_ID:-}
+      - GOOGLE_ADS_CLIENT_SECRET=${GOOGLE_ADS_CLIENT_SECRET:-}
+      - GOOGLE_ADS_REFRESH_TOKEN=${GOOGLE_ADS_REFRESH_TOKEN:-}
+      - GOOGLE_ADS_LOGIN_CUSTOMER_ID=${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}
+      - GOOGLE_ADS_CUSTOMER_ID=${GOOGLE_ADS_CUSTOMER_ID:-}
+      - GOOGLE_ADS_USE_PROTO_PLUS=True
+      - ATLASCLOUD_API_KEY=${ATLASCLOUD_API_KEY:-}
+      - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-}
+      - HERMES_API_PORT=${HERMES_API_PORT:-8642}
+      - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
+      - HERMES_WEB_PORT=${HERMES_WEB_PORT:-9119}
+      - EVOLUTION_BASE_URL=http://evolution-go:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
+      - EVOLUTION_INSTANCE_TOKEN=${EVOLUTION_INSTANCE_TOKEN:-}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-vibestack}
+      - EVOLUTION_PROXY_PROTOCOL=${EVOLUTION_PROXY_PROTOCOL:-http}
+      - EVOLUTION_PROXY_HOST=${EVOLUTION_PROXY_HOST:-}
+      - EVOLUTION_PROXY_PORT=${EVOLUTION_PROXY_PORT:-}
+      - EVOLUTION_PROXY_USERNAME=${EVOLUTION_PROXY_USERNAME:-}
+      - EVOLUTION_PROXY_PASSWORD=${EVOLUTION_PROXY_PASSWORD:-}
+      - EVOLUTION_IGNORE_GROUPS=${EVOLUTION_IGNORE_GROUPS:-true}
+      - EVOLUTION_IGNORE_STATUS=${EVOLUTION_IGNORE_STATUS:-true}
+      - HERMES_APPROVALS_MODE=${HERMES_APPROVALS_MODE:-off}
+      - WA_BRIDGE_AGENT=${WA_BRIDGE_AGENT:-hermes}
+      - WA_BRIDGE_OPENCLAW_AGENT=${WA_BRIDGE_OPENCLAW_AGENT:-}
+      - WA_BRIDGE_PORT=${WA_BRIDGE_PORT:-8765}
+      - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
+      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-0}
+      - WA_BRIDGE_ACK_AFTER=${WA_BRIDGE_ACK_AFTER:-20}
+      - B2_KEY_ID=${B2_KEY_ID:-}
+      - B2_APP_KEY=${B2_APP_KEY:-}
+      - B2_BUCKET=${B2_BUCKET:-}
+      - B2_ENDPOINT_URL=${B2_ENDPOINT_URL:-https://s3.us-west-002.backblazeb2.com}
+    volumes:
+      - openclaw-data:/root/.openclaw
+      - ollama-data:/var/lib/ollama
+      - lmstudio-data:/root/.lmstudio/models
+      - hermes-data:/root/.hermes
+      - higgsfield-data:/root/.higgsfield
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "11434:11434"
+      - "1234:1234"
+      - "${HERMES_API_PORT:-8642}:8642"
+      - "${HERMES_WEB_PORT:-9119}:9119"
+    command:
+      - "openclaw"
+      - "gateway"
+      - "--bind"
+      - "${OPENCLAW_GATEWAY_BIND:-lan}"
+      - "--port"
+      - "${OPENCLAW_GATEWAY_PORT:-18789}"
+      - "--allow-unconfigured"
+
+  postgres:
+    image: ${EVOLUTION_PG_IMAGE:-pgvector/pgvector:pg16}
+    restart: unless-stopped
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-evolution-dbs.sql:/docker-entrypoint-initdb.d/init-evolution-dbs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  evolution-go:
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-go:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8080
+      - GLOBAL_API_KEY=${EVOLUTION_API_KEY}
+      - POSTGRES_AUTH_DB=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_auth?sslmode=disable
+      - POSTGRES_USERS_DB=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_users?sslmode=disable
+      - DATABASE_SAVE_MESSAGES=${EVOLUTION_SAVE_MESSAGES:-true}
+      - CONNECT_ON_STARTUP=true
+      - WEBHOOK_URL=http://openclaw-vibestack:${WA_BRIDGE_PORT:-8765}/webhook
+      - WEBHOOK_FILES=true
+      - MINIO_ENABLED=${EVOLUTION_MINIO_ENABLED:-false}
+      - MINIO_ENDPOINT=${EVOLUTION_MINIO_ENDPOINT:-}
+      - MINIO_ACCESS_KEY=${EVOLUTION_MINIO_ACCESS_KEY:-}
+      - MINIO_SECRET_KEY=${EVOLUTION_MINIO_SECRET_KEY:-}
+      - MINIO_BUCKET=${EVOLUTION_MINIO_BUCKET:-}
+      - MINIO_USE_SSL=${EVOLUTION_MINIO_USE_SSL:-true}
+      - MINIO_REGION=${EVOLUTION_MINIO_REGION:-}
+    volumes:
+      - evolution-data:/app/data
+    ports:
+      - "${EVOLUTION_PORT:-8080}:8080"
+
+volumes:
+  openclaw-data:
+  ollama-data:
+  lmstudio-data:
+  hermes-data:
+  higgsfield-data:
+  postgres-data:
+  evolution-data:
