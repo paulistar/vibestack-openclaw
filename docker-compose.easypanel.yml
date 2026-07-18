@@ -67,11 +67,13 @@ services:
       - hermes-data:/root/.hermes
       - higgsfield-data:/root/.higgsfield
     ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-      - "11434:11434"
-      - "1234:1234"
-      - "${HERMES_API_PORT:-8642}:8642"
-      - "${HERMES_WEB_PORT:-9119}:9119"
+      # Host ports deslocados p/ não colidir com iamaster-openclaw (18789) / ollama swarm (11434).
+      # Interno do container permanece 18789/11434/8642/9119 (OPENCLAW_GATEWAY_PORT etc.).
+      - "28789:18789"
+      - "21134:11434"
+      - "21234:1234"
+      - "28642:8642"
+      - "29119:9119"
     command:
       - "openclaw"
       - "gateway"
@@ -121,7 +123,8 @@ services:
     volumes:
       - evolution-data:/app/data
     ports:
-      - "${EVOLUTION_PORT:-8080}:8080"
+      # Host 28080 — evita colisão com iamaster-evolution em 8080.
+      - "28080:8080"
 
 volumes:
   openclaw-data:
