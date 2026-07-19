@@ -3,6 +3,11 @@
 # - volumes nomeados (persistência gerenciada pelo Docker/EasyPanel)
 # - sem `ports:` no host — acesso só via Traefik + rede easypanel (domínios)
 # - mesmo env_file/.env injetado pelo EasyPanel (services.compose.updateEnv)
+#
+# IMPORTANTE — EasyPanel usa SÓ este ficheiro (`composeFile`).
+# `docker-compose.override.yml` NÃO é aplicado no Deploy EasyPanel.
+# Redes/aliases Traefik e defaults do bridge WhatsApp→Ollama vivem AQUI.
+# Ver docs/DEPLOY-EASYPANEL.md antes de clicar Deploy.
 
 services:
   openclaw-vibestack:
@@ -59,7 +64,7 @@ services:
       - WA_BRIDGE_UPSTREAM=${WA_BRIDGE_UPSTREAM:-http://127.0.0.1:11434}
       - WA_BRIDGE_MODEL=${WA_BRIDGE_MODEL:-llama3.2:3b}
       - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
-      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-0}
+      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-90}
       - WA_BRIDGE_ACK_AFTER=${WA_BRIDGE_ACK_AFTER:-15}
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-1024}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-1024}
@@ -74,7 +79,12 @@ services:
       - hermes-data:/root/.hermes
       - higgsfield-data:/root/.higgsfield
     # Sem ports host: Traefik roteia nas portas internas (18789 OpenClaw, 9119 Hermes).
-    # Expose interno via DNS do compose + aliases easypanel no override.
+    # Rede easypanel + aliases = DNS que o Traefik/EasyPanel espera.
+    networks:
+      default:
+      easypanel:
+        aliases:
+          - agenciamart-ia_vibestack-openclaw_openclaw-vibestack
     command:
       - "openclaw"
       - "gateway"
@@ -98,6 +108,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - default
 
   evolution-go:
     image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-go:latest}
@@ -124,6 +136,15 @@ services:
     volumes:
       - evolution-data:/app/data
     # Sem ports host: Traefik roteia na porta interna 8080 via rede easypanel.
+    networks:
+      default:
+      easypanel:
+        aliases:
+          - agenciamart-ia_vibestack-openclaw_evolution-go
+
+networks:
+  easypanel:
+    external: true
 
 volumes:
   openclaw-data:
