@@ -1,7 +1,7 @@
 # Compose adaptado para EasyPanel (deploy via Git).
 # Diferenças vs docker-compose.yml:
 # - volumes nomeados (persistência gerenciada pelo Docker/EasyPanel)
-# - portas publicadas em 0.0.0.0 (proxy/domínio do EasyPanel)
+# - sem `ports:` no host — acesso só via Traefik + rede easypanel (domínios)
 # - mesmo env_file/.env injetado pelo EasyPanel (services.compose.updateEnv)
 
 services:
@@ -66,14 +66,8 @@ services:
       - lmstudio-data:/root/.lmstudio/models
       - hermes-data:/root/.hermes
       - higgsfield-data:/root/.higgsfield
-    ports:
-      # Host ports deslocados p/ não colidir com iamaster-openclaw (18789) / ollama swarm (11434).
-      # Interno do container permanece 18789/11434/8642/9119 (OPENCLAW_GATEWAY_PORT etc.).
-      - "28789:18789"
-      - "21134:11434"
-      - "21234:1234"
-      - "28642:8642"
-      - "29119:9119"
+    # Sem ports host: Traefik roteia nas portas internas (18789 OpenClaw, 9119 Hermes).
+    # Expose interno via DNS do compose + aliases easypanel no override.
     command:
       - "openclaw"
       - "gateway"
@@ -122,9 +116,7 @@ services:
       - MINIO_REGION=${EVOLUTION_MINIO_REGION:-}
     volumes:
       - evolution-data:/app/data
-    ports:
-      # Host 28080 — evita colisão com iamaster-evolution em 8080.
-      - "28080:8080"
+    # Sem ports host: Traefik roteia na porta interna 8080 via rede easypanel.
 
 volumes:
   openclaw-data:
