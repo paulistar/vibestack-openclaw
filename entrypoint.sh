@@ -27,10 +27,12 @@ set -e
 register_mcp() {
   name="$1"
   json="$2"
-  if openclaw mcp set "$name" "$json" >/dev/null 2>&1; then
+  # timeout: sob CPU saturada (ex.: Ollama CPU) o `openclaw mcp set` pode travar
+  # e impedir hermes/bridge de subir. Prefira falhar o MCP a bloquear o boot.
+  if timeout 45 openclaw mcp set "$name" "$json" >/dev/null 2>&1; then
     echo "[entrypoint] mcp '$name' registrado"
   else
-    echo "[entrypoint] AVISO: falha ao registrar mcp '$name' (openclaw.json ausente? rode 'openclaw configure' uma vez)"
+    echo "[entrypoint] AVISO: falha/timeout ao registrar mcp '$name' (openclaw.json ausente ou host sobrecarregado)"
   fi
 }
 
@@ -317,13 +319,13 @@ if [ -n "${EVOLUTION_INSTANCE_TOKEN:-}" ] && { [ "$WA_BRIDGE_AGENT" = "openclaw"
   (
     WA_BRIDGE_AGENT="$WA_BRIDGE_AGENT" \
     WA_BRIDGE_PORT="${WA_BRIDGE_PORT:-8765}" \
-    WA_BRIDGE_UPSTREAM="${WA_BRIDGE_UPSTREAM:-http://127.0.0.1:${HERMES_API_PORT:-8642}}" \
-    WA_BRIDGE_UPSTREAM_KEY="${API_SERVER_KEY:-}" \
-    WA_BRIDGE_MODEL="${WA_BRIDGE_MODEL:-hermes-agent}" \
+    WA_BRIDGE_UPSTREAM="${WA_BRIDGE_UPSTREAM:-http://127.0.0.1:11434}" \
+    WA_BRIDGE_UPSTREAM_KEY="${API_SERVER_KEY:-ollama}" \
+    WA_BRIDGE_MODEL="${WA_BRIDGE_MODEL:-llama3.2:3b}" \
     WA_BRIDGE_OPENCLAW_AGENT="${WA_BRIDGE_OPENCLAW_AGENT:-}" \
     WA_BRIDGE_ALLOWED_NUMBERS="${WA_BRIDGE_ALLOWED_NUMBERS:-}" \
     WA_BRIDGE_UPSTREAM_TIMEOUT="${WA_BRIDGE_UPSTREAM_TIMEOUT:-0}" \
-    WA_BRIDGE_ACK_AFTER="${WA_BRIDGE_ACK_AFTER:-20}" \
+    WA_BRIDGE_ACK_AFTER="${WA_BRIDGE_ACK_AFTER:-15}" \
     WA_BRIDGE_PUBLIC_URL="${WA_BRIDGE_PUBLIC_URL:-http://openclaw-vibestack:${WA_BRIDGE_PORT:-8765}/webhook}" \
     EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
     EVOLUTION_API_KEY="${EVOLUTION_API_KEY:-}" \

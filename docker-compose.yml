@@ -78,6 +78,8 @@ services:
       - WA_BRIDGE_AGENT=${WA_BRIDGE_AGENT:-hermes}
       - WA_BRIDGE_OPENCLAW_AGENT=${WA_BRIDGE_OPENCLAW_AGENT:-}
       - WA_BRIDGE_PORT=${WA_BRIDGE_PORT:-8765}
+      # Mesma key do api_server Hermes (entrypoint também injeta no processo do bridge).
+      - WA_BRIDGE_UPSTREAM_KEY=${HERMES_API_SERVER_KEY:-}
       - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
       # Tarefas longas (gerar criativo etc.): timeout do agente e aviso de "processando".
       - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-0}
