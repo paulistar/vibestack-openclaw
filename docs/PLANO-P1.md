@@ -142,6 +142,7 @@ COMPOSE_PROJECT_NAME=vibestack-openclaw \
 ## Commits desta rodada
 
 - `4fbddec` — `feat: plano P1 — Hermes TG off, Claude OpenClaw, seeds e docs MCP` (em `origin/main`)
+- `31a6de0` — `docs: fechar PLANO-P1 com commit 4fbddec e status VPS`
 
 ## Deploy VPS (fechamento)
 
