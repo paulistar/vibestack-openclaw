@@ -41,10 +41,21 @@ command -v openclaw >/dev/null || die "openclaw CLI não encontrado"
 mkdir -p "$WS_ROOT/_shared/assets" "$WS_ROOT/_shared/creatives" "$WS_ROOT/clients"
 
 # --- 0) clients/ → workspace (memória de contas do agente cliente) -----------
+# Remove nest acidente (ex.: docker cp clients …/workspace/clients → clients/clients).
+if [[ -d "$WS_ROOT/clients/clients" ]]; then
+  log "removendo nest inválido $WS_ROOT/clients/clients"
+  rm -rf "$WS_ROOT/clients/clients"
+fi
 if [[ -d "$CLIENTS_SRC" ]]; then
   log "sincronizando clients/ → $WS_ROOT/clients"
   # Copia templates/seeds; não apaga history local se existir só no volume.
-  cp -a "$CLIENTS_SRC"/. "$WS_ROOT/clients/"
+  # Usa rsync se disponível para não recriar nest; senão cp -a dos conteúdos.
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --exclude 'clients' "$CLIENTS_SRC"/ "$WS_ROOT/clients/"
+  else
+    cp -a "$CLIENTS_SRC"/. "$WS_ROOT/clients/"
+    [[ -d "$WS_ROOT/clients/clients" ]] && rm -rf "$WS_ROOT/clients/clients"
+  fi
 else
   log "aviso: CLIENTS_SRC ausente ($CLIENTS_SRC) — pulando sync de clients/"
 fi
