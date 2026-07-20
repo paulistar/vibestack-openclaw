@@ -126,7 +126,7 @@ COMPOSE_PROJECT_NAME=vibestack-openclaw \
 
 - `4fbddec` — `feat: plano P1 — Hermes TG off, Claude OpenClaw, seeds e docs MCP` (em `origin/main`)
 - `31a6de0` — `docs: fechar PLANO-P1 com commit 4fbddec e status VPS`
-- *(P1.2 dados reais)* — `clients/mart-studios` + `clients/difrare` + `PLANO-P1.md`
+- `bf52b08` — `feat: P1.2 clientes com dados reais (mart-studios + difrare)`
 
 ## Deploy VPS (fechamento)
 
@@ -134,4 +134,4 @@ COMPOSE_PROJECT_NAME=vibestack-openclaw \
 - [x] Recreate só `openclaw-vibestack` (easypanel + override) — Evolution **não** tocado (`agenciamart-vibestack-evolution-go-1` Up)
 - [x] Bootstrap: providers `apipromax-gpt` + `apipromax-claude`; clients sync (`mart-studios`, `difrare`)
 - [x] Confirmação: Hermes Telegram `✗ not configured`; OpenClaw TG `@chatmartstudios_bot` polling
-- [ ] Pós-P1.2: `git pull` + sync `clients/` no volume (sem recreate Evolution)
+- [x] Pós-P1.2: `git pull` → `bf52b08` + sync `clients/` no volume (tar → `/root/.openclaw/workspace/clients/`) — Evolution **não** tocado; agente `cliente` lê via symlink `workspace/cliente/clients`
