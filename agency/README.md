@@ -1,6 +1,6 @@
 # agency/ — prompts dos agentes (templates)
 
-Esta pasta traz os **prompts prontos** dos 6 agentes da agência de tráfego, para você carregar no **OpenClaw** (ou no **Hermes**). São **templates**: tudo que depende do seu contexto está marcado com **placeholders `{{ASSIM}}`** — troque-os antes de usar.
+Esta pasta traz os **prompts prontos** dos 7 agentes da agência de tráfego, para você carregar no **OpenClaw** (ou no **Hermes**). São **templates**: tudo que depende do seu contexto está marcado com **placeholders `{{ASSIM}}`** — troque-os antes de usar. Contexto de contas: pasta [`clients/`](../clients/) + agente `cliente` — ver [`docs/CLIENTES.md`](../docs/CLIENTES.md).
 
 > ⚠️ **Este `README.md` é um guia, não um prompt.** Não cole o conteúdo dele em nenhum agente. Carregue só os arquivos `IDENTITY.md` / `SOUL.md` / `USER.md` / `TOOLS.md` / `AGENTS.md`.
 
@@ -27,9 +27,10 @@ Cada pasta de agente tem até 5 arquivos (a CLI do OpenClaw os usa como blocos d
 | `TOOLS.md`    | Quais tools MCP ele pode usar e as regras de uso (só alguns agentes).  |
 | `AGENTS.md`   | O papel operacional: fluxo, alçada, o que faz e o que **não** faz.     |
 
-## Os 6 agentes e o fluxo
+## Os 7 agentes e o fluxo
 
 - **Diretor** 🎯 — porta única com você (o humano). Recebe tudo pelo seu canal, roteia e devolve. Não executa nada no Meta.
+- **Cliente** 📁 — memória de conta (`clients/<slug>/`). Fonte da verdade de ICP/marca/oferta; valida se entregas fogem do cliente.
 - **Analista** 📊 — só leitura de Meta Ads; entrega números + leitura, sem opinar.
 - **Estrategista** ♟️ — decide a ação (ancorada em número). Tem alçada própria; acima dela, escala pro Diretor (= pede sua aprovação).
 - **Copywriter** ✍️ — escreve as variações de texto do anúncio.
@@ -37,9 +38,10 @@ Cada pasta de agente tem até 5 arquivos (a CLI do OpenClaw os usa como blocos d
 - **Gestor de Tráfego** 🛠️ — **único** que escreve no Meta Ads; executa só sob ordem da Estrategista (autônoma) ou do Diretor (aprovada por você).
 
 ```
-Você → Diretor → Analista → Estrategista ─┬─ (na alçada) → Gestor → Meta Ads
-                                          └─ (acima)     → Diretor → você aprova → Gestor
-                              Estrategista → Copywriter / Criativo (quando há peça nova)
+Você → Diretor → Cliente → (ok) → Analista → Estrategista ─┬─ (na alçada) → Gestor → Meta Ads
+                                                          └─ (acima)     → Diretor → você aprova → Gestor
+                                      Estrategista → Copywriter / Criativo (quando há peça nova)
+                                      → Cliente valida → Diretor responde
 ```
 
 ## Placeholders — troque todos
@@ -84,7 +86,7 @@ openclaw config get agents.defaults.subagents
 openclaw config get agents.list
 ```
 
-A última saída deve listar `main` + os agentes da agência (`diretor`, `analista`, `estrategista`, `copywriter`, `criativo`, `gestor`). Se faltar algum, crie-o em `agents.list` — veja o *Passo 13* do `README.md` da raiz.
+A última saída deve listar `main` + os agentes da agência (`diretor`, `cliente`, `analista`, `estrategista`, `copywriter`, `criativo`, `gestor`). Se faltar algum, crie-o em `agents.list` — veja o *Passo 13* do `README.md` da raiz.
 
 ### Regras que evitam erro
 

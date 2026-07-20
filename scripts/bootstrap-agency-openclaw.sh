@@ -16,6 +16,7 @@
 set -euo pipefail
 
 AGENCY_SRC="${AGENCY_SRC:-/opt/agenciamart-ia/vibestack-openclaw/agency}"
+CLIENTS_SRC="${CLIENTS_SRC:-/opt/agenciamart-ia/vibestack-openclaw/clients}"
 OPENCLAW_HOME="${OPENCLAW_HOME:-/root/.openclaw}"
 WS_ROOT="${OPENCLAW_HOME}/workspace"
 MODEL_ID="${APIPROMAX_DEFAULT_MODEL:-gpt-5.4-mini}"
@@ -27,7 +28,7 @@ TELEGRAM_OWNER="${TELEGRAM_ALLOWED_USERS:-}"
 SKIP_TELEGRAM="${SKIP_TELEGRAM:-0}"
 SKIP_HERMES_TG_DISABLE="${SKIP_HERMES_TG_DISABLE:-0}"
 
-AGENTS=(diretor analista estrategista copywriter criativo gestor)
+AGENTS=(diretor cliente analista estrategista copywriter criativo gestor)
 
 log() { printf '[bootstrap-agency] %s\n' "$*"; }
 die() { printf '[bootstrap-agency] ERRO: %s\n' "$*" >&2; exit 1; }
@@ -37,7 +38,16 @@ command -v openclaw >/dev/null || die "openclaw CLI não encontrado"
 [[ -f "$OPENCLAW_HOME/openclaw.json" ]] || die "falta $OPENCLAW_HOME/openclaw.json — rode o gateway/configure antes"
 [[ -n "$API_KEY" ]] || die "APIPROMAX_GPT_API_KEY vazio — configure ApiProMax antes (docs/APIPROMAX.md)"
 
-mkdir -p "$WS_ROOT/_shared/assets" "$WS_ROOT/_shared/creatives"
+mkdir -p "$WS_ROOT/_shared/assets" "$WS_ROOT/_shared/creatives" "$WS_ROOT/clients"
+
+# --- 0) clients/ → workspace (memória de contas do agente cliente) -----------
+if [[ -d "$CLIENTS_SRC" ]]; then
+  log "sincronizando clients/ → $WS_ROOT/clients"
+  # Copia templates/seeds; não apaga history local se existir só no volume.
+  cp -a "$CLIENTS_SRC"/. "$WS_ROOT/clients/"
+else
+  log "aviso: CLIENTS_SRC ausente ($CLIENTS_SRC) — pulando sync de clients/"
+fi
 
 # --- 1) Model provider ApiProMax (openai-completions) + defaults -------------
 log "configurando provider ${PROVIDER_ID} / modelo ${MODEL_REF}"
@@ -123,6 +133,11 @@ for id in "${AGENTS[@]}"; do
     log "aviso: set-identity $id falhou (IDENTITY.md pode estar fora do schema)"
 done
 
+# Agente cliente: atalho clients/ dentro do workspace (mesmo volume de _shared)
+if [[ -d "$WS_ROOT/clients" ]]; then
+  ln -sfn ../clients "$WS_ROOT/cliente/clients" 2>/dev/null || true
+fi
+
 # Diretor = default (orquestrador). Edita openclaw.json diretamente (arrays do
 # config patch substituem a lista inteira — perigoso sem merge manual).
 log "marcando diretor como default no openclaw.json"
@@ -139,6 +154,7 @@ if not isinstance(lst, list):
 by = {a.get("id"): a for a in lst if isinstance(a, dict) and a.get("id")}
 needed = {
     "diretor": "/root/.openclaw/workspace/diretor",
+    "cliente": "/root/.openclaw/workspace/cliente",
     "analista": "/root/.openclaw/workspace/analista",
     "estrategista": "/root/.openclaw/workspace/estrategista",
     "copywriter": "/root/.openclaw/workspace/copywriter",
@@ -155,7 +171,7 @@ for aid, ws in needed.items():
 if "main" in by:
     by["main"]["default"] = False
     by["main"].setdefault("workspace", "/root/.openclaw/workspace")
-order = ["diretor", "main", "analista", "estrategista", "copywriter", "criativo", "gestor"]
+order = ["diretor", "main", "cliente", "analista", "estrategista", "copywriter", "criativo", "gestor"]
 out = []
 seen = set()
 for oid in order:

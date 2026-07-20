@@ -9,7 +9,8 @@ Templates: [`agency/`](../agency/). Tutorial upstream: Passo 13 do README.
 | Peça | Onde |
 |------|------|
 | Prompts SOUL/AGENTS/… | `/root/.openclaw/workspace/<agente>/` (volume) |
-| Agentes OpenClaw | `diretor` (default), `analista`, `estrategista`, `copywriter`, `criativo`, `gestor` (+ `main` legado) |
+| Agentes OpenClaw | `diretor` (default), `cliente`, `analista`, `estrategista`, `copywriter`, `criativo`, `gestor` (+ `main` legado) |
+| Contexto de clientes | `clients/<slug>/` → `/root/.openclaw/workspace/clients/` — ver [CLIENTES.md](./CLIENTES.md) |
 | Subagentes | `maxSpawnDepth: 2`, `allowAgents: ["*"]`, `announceTimeoutMs: 300000` |
 | Modelo | `apipromax-gpt/<APIPROMAX_DEFAULT_MODEL>` (ex.: `gpt-5.4-mini`) |
 | Tools MCP | `tools.profile: coding` → meta-ads, google-ads, whatsapp, etc. |
@@ -30,11 +31,13 @@ set +a
 
 docker cp scripts/bootstrap-agency-openclaw.sh openclaw-vibestack-wa:/tmp/bootstrap-agency-openclaw.sh
 docker cp agency openclaw-vibestack-wa:/tmp/agency
+docker cp clients openclaw-vibestack-wa:/tmp/clients
 
 docker exec \
   -e APIPROMAX_BASE_URL -e APIPROMAX_GPT_API_KEY -e APIPROMAX_DEFAULT_MODEL \
   -e TELEGRAM_BOT_TOKEN -e TELEGRAM_ALLOWED_USERS \
   -e AGENCY_SRC=/tmp/agency \
+  -e CLIENTS_SRC=/tmp/clients \
   openclaw-vibestack-wa bash /tmp/bootstrap-agency-openclaw.sh
 
 # Só o OpenClaw/Hermes — NÃO reinicie o Evolution (sessão WA)
@@ -67,17 +70,20 @@ Fale com o **mesmo bot**; quem responde é o **Diretor** (OpenClaw). Exemplos:
 - `Delegue ao analista um resumo das campanhas Meta Ads (só leitura) e me traga 3 bullets.`
 - `Quero uma análise crítica + recomendação de budget; se passar da alçada, me peça aprovação.`
 - `Com briefing X, peça à estrategista que convoque o copywriter (3 variações) — sem publicar.`
+- `Pro cliente mart-studios, consulte o agente cliente e me diga ICP + tom.` (ver [CLIENTES.md](./CLIENTES.md))
 
-O Diretor deve chamar `sessions_spawn` com `runtime: 'subagent'`, `agentId: 'analista'|…`, e **não** usar `sessions_yield` (não existe neste build).
+O Diretor deve chamar `sessions_spawn` com `runtime: 'subagent'`, `agentId: 'cliente'|'analista'|…`, e **não** usar `sessions_yield` (não existe neste build). Em tarefa de cliente, **`cliente` vem antes** dos demais.
 
 ## Fluxo interno
 
 ```
 Você (Telegram/WA) → Diretor
+  → Cliente (contexto / validação de marca-ICP)  ← obrigatório em tarefa de cliente
   → Analista (leitura Meta)
   → Estrategista (decide; alçada 30% / R$ 200/dia)
       → Copywriter / Criativo (peças)
       → Gestor (único que escreve no Meta) — só com ordem/aprovação
+  → Cliente valida entregas → Diretor responde
 ```
 
 ## Hermes vs OpenClaw no Telegram
