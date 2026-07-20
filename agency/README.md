@@ -30,7 +30,7 @@ Cada pasta de agente tem até 5 arquivos (a CLI do OpenClaw os usa como blocos d
 ## Os 7 agentes e o fluxo
 
 - **Diretor** 🎯 — porta única com você (o humano). Recebe tudo pelo seu canal, roteia e devolve. Não executa nada no Meta.
-- **Cliente** 📁 — memória de conta (`clients/<slug>/`). Fonte da verdade de ICP/marca/oferta; valida se entregas fogem do cliente.
+- **Cliente** 📁 — memória de conta (`clients/<slug>/`). Lê e **grava** via Telegram (novo/update); valida se entregas fogem do cliente.
 - **Analista** 📊 — só leitura de Meta Ads; entrega números + leitura, sem opinar.
 - **Estrategista** ♟️ — decide a ação (ancorada em número). Tem alçada própria; acima dela, escala pro Diretor (= pede sua aprovação).
 - **Copywriter** ✍️ — escreve as variações de texto do anúncio.
