@@ -41,6 +41,15 @@ docker exec \
 docker restart openclaw-vibestack-wa
 ```
 
+> **Compose na VPS:** use sempre `docker-compose.easypanel.yml` (+ override).  
+> `docker compose -f docker-compose.yml ...` faz bind em `/root/.openclaw` e **desconecta** o volume nomeado `vibestack-openclaw_openclaw-data` (onde está a config dos agentes).  
+> Recreate seguro:
+> ```bash
+> COMPOSE_PROJECT_NAME=vibestack-openclaw \
+>   docker compose -f docker-compose.easypanel.yml -f docker-compose.override.yml \
+>   up -d --no-deps --force-recreate openclaw-vibestack
+> ```
+
 Validar:
 
 ```bash
