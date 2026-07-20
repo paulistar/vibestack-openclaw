@@ -81,14 +81,36 @@ start_wa_bridge
 mkdir -p /root/.openclaw/workspace/_shared/assets /root/.openclaw/workspace/_shared/creatives /root/.openclaw/workspace/clients 2>/dev/null || true
 
 # --- Hermes Agent CEDO (antes dos openclaw mcp set) -----------------------
-# Critico: sob CPU saturada, `openclaw mcp set` pode levar minutos. Telegram
-# (Hermes gateway) NAO pode esperar isso — sobe agora, MCP OpenClaw depois.
+# Critico: sob CPU saturada, `openclaw mcp set` pode levar minutos. Hermes
+# api_server/dashboard sobe agora; MCP OpenClaw depois.
 # Hermes roda ao lado do OpenClaw: api_server OpenAI-compatible na 8642,
 # usando os MESMOS middlewares MCP (meta-ads, media-editor). O provider/modelo
 # NAO e' configurado aqui de proposito — o usuario edita config.yaml depois
 # (persistido no volume), igual faz com o openclaw.json.
+#
+# Telegram: prioridade = OpenClaw nativo → agente diretor. O compose ainda
+# passa TELEGRAM_* no env do container (OpenClaw le). Hermes NAO deve
+# long-poll o mesmo bot — zeramos o volume .env e unset no subprocesso.
 HERMES_HOME="${HOME:-/root}/.hermes"
 mkdir -p "$HERMES_HOME"
+
+# P1.4 — desliga Telegram residual no volume Hermes (idempotente a cada boot).
+if [ "${HERMES_DISABLE_TELEGRAM:-1}" != "0" ]; then
+  HERMES_ENV_FILE="$HERMES_HOME/.env"
+  if [ -f "$HERMES_ENV_FILE" ]; then
+    tmp_h="$(mktemp)"
+    grep -vE '^TELEGRAM_(BOT_TOKEN|ALLOWED_USERS|HOME_CHANNEL|HOME_CHANNEL_NAME)=' \
+      "$HERMES_ENV_FILE" >"$tmp_h" 2>/dev/null || true
+    {
+      echo '# Telegram movido para OpenClaw (diretor). Hermes sem poll.'
+      echo 'TELEGRAM_BOT_TOKEN='
+      echo 'TELEGRAM_ALLOWED_USERS='
+    } >>"$tmp_h"
+    mv "$tmp_h" "$HERMES_ENV_FILE"
+    chmod 600 "$HERMES_ENV_FILE" 2>/dev/null || true
+    echo "[entrypoint] Hermes TELEGRAM_* zerado em $HERMES_ENV_FILE (OpenClaw Diretor e' o canal TG)"
+  fi
+fi
 
 # Registro MCP: faz um merge idempotente em config.yaml, gravando so as
 # entradas mcp_servers e preservando qualquer outra chave (model, provider,
@@ -283,8 +305,15 @@ else
   # Kanban e' compartilhado (/root/.hermes/kanban.db), entao um unico gateway default
   # ja' despacha tasks de QUALQUER assignee (spawna o profile de cada task).
   HERMES_GATEWAY_PROFILE="${HERMES_GATEWAY_PROFILE:-default}"
+  # Telegram e' do OpenClaw Diretor. O compose ainda injeta TELEGRAM_* no
+  # container (OpenClaw precisa), mas o processo Hermes NAO deve herdar —
+  # evita double-poll no mesmo botToken. Volume /root/.hermes/.env tambem
+  # fica com TELEGRAM_*= vazio (bootstrap-agency).
   (
     while true; do
+      env -u TELEGRAM_BOT_TOKEN -u TELEGRAM_ALLOWED_USERS \
+        -u TELEGRAM_HOME_CHANNEL -u TELEGRAM_HOME_CHANNEL_NAME \
+        -u TELEGRAM_WEBHOOK_URL \
       HERMES_HOME="$HERMES_HOME" \
       API_SERVER_HOST=0.0.0.0 \
       API_SERVER_PORT="${HERMES_API_PORT:-8642}" \
@@ -296,6 +325,7 @@ else
   ) >/var/log/hermes.log 2>&1 &
   HERMES_PID=$!
   echo "[entrypoint] hermes gateway run (auto-restart) iniciado em 0.0.0.0:${HERMES_API_PORT:-8642} (pid=$HERMES_PID, log=/var/log/hermes.log)"
+  echo "[entrypoint] Hermes: TELEGRAM_* unset no processo (poll so OpenClaw Diretor)."
   echo "[entrypoint] LEMBRE: configure o provider/modelo do Hermes (docker exec -it <cont> hermes model) — o build nao baka provider."
 fi
 

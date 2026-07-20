@@ -10,7 +10,8 @@
 # Uso:
 #   AGENCY_SRC=/opt/.../agency bash scripts/bootstrap-agency-openclaw.sh
 #   # ou:
-#   docker exec -e APIPROMAX_GPT_API_KEY -e APIPROMAX_BASE_URL -e APIPROMAX_DEFAULT_MODEL \
+#   docker exec -e APIPROMAX_GPT_API_KEY -e APIPROMAX_CLAUDE_API_KEY \
+#     -e APIPROMAX_BASE_URL -e APIPROMAX_DEFAULT_MODEL \
 #     -e TELEGRAM_BOT_TOKEN -e TELEGRAM_ALLOWED_USERS \
 #     openclaw-vibestack-wa bash /app/scripts/bootstrap-agency-openclaw.sh
 set -euo pipefail
@@ -19,11 +20,20 @@ AGENCY_SRC="${AGENCY_SRC:-/opt/agenciamart-ia/vibestack-openclaw/agency}"
 CLIENTS_SRC="${CLIENTS_SRC:-/opt/agenciamart-ia/vibestack-openclaw/clients}"
 OPENCLAW_HOME="${OPENCLAW_HOME:-/root/.openclaw}"
 WS_ROOT="${OPENCLAW_HOME}/workspace"
-MODEL_ID="${APIPROMAX_DEFAULT_MODEL:-gpt-5.4-mini}"
-PROVIDER_ID="apipromax-gpt"
-MODEL_REF="${PROVIDER_ID}/${MODEL_ID}"
 BASE_URL="${APIPROMAX_BASE_URL:-https://apipromax.online/v1}"
 API_KEY="${APIPROMAX_GPT_API_KEY:-}"
+CLAUDE_KEY="${APIPROMAX_CLAUDE_API_KEY:-}"
+CLAUDE_MODEL_ID="${APIPROMAX_CLAUDE_MODEL:-claude-sonnet-5}"
+# Default provider: apipromax-gpt | apipromax-claude
+DEFAULT_PROVIDER="${OPENCLAW_DEFAULT_PROVIDER:-apipromax-gpt}"
+if [[ "$DEFAULT_PROVIDER" == "apipromax-claude" ]]; then
+  MODEL_ID="${APIPROMAX_CLAUDE_MODEL:-claude-sonnet-5}"
+  PROVIDER_ID="apipromax-claude"
+else
+  MODEL_ID="${APIPROMAX_DEFAULT_MODEL:-gpt-5.4-mini}"
+  PROVIDER_ID="apipromax-gpt"
+fi
+MODEL_REF="${PROVIDER_ID}/${MODEL_ID}"
 TELEGRAM_OWNER="${TELEGRAM_ALLOWED_USERS:-}"
 SKIP_TELEGRAM="${SKIP_TELEGRAM:-0}"
 SKIP_HERMES_TG_DISABLE="${SKIP_HERMES_TG_DISABLE:-0}"
@@ -37,6 +47,9 @@ command -v openclaw >/dev/null || die "openclaw CLI não encontrado"
 [[ -d "$AGENCY_SRC/diretor" ]] || die "AGENCY_SRC inválido: $AGENCY_SRC (falta diretor/)"
 [[ -f "$OPENCLAW_HOME/openclaw.json" ]] || die "falta $OPENCLAW_HOME/openclaw.json — rode o gateway/configure antes"
 [[ -n "$API_KEY" ]] || die "APIPROMAX_GPT_API_KEY vazio — configure ApiProMax antes (docs/APIPROMAX.md)"
+if [[ "$DEFAULT_PROVIDER" == "apipromax-claude" && -z "$CLAUDE_KEY" ]]; then
+  die "OPENCLAW_DEFAULT_PROVIDER=apipromax-claude mas APIPROMAX_CLAUDE_API_KEY vazio"
+fi
 
 mkdir -p "$WS_ROOT/_shared/assets" "$WS_ROOT/_shared/creatives" "$WS_ROOT/clients"
 
@@ -68,32 +81,46 @@ else
   log "AVISO: sem write em $WS_ROOT/clients — agente cliente não conseguirá gravar"
 fi
 
-# --- 1) Model provider ApiProMax (openai-completions) + defaults -------------
-log "configurando provider ${PROVIDER_ID} / modelo ${MODEL_REF}"
+# --- 1) Model providers ApiProMax (GPT + Claude) + defaults ------------------
+log "configurando providers ApiProMax (default ${MODEL_REF})"
 TMP_PATCH="$(mktemp)"
-python3 - "$TMP_PATCH" "$PROVIDER_ID" "$BASE_URL" "$API_KEY" "$MODEL_ID" "$MODEL_REF" <<'PY'
+python3 - "$TMP_PATCH" "$BASE_URL" "$API_KEY" "${APIPROMAX_DEFAULT_MODEL:-gpt-5.4-mini}" \
+  "$CLAUDE_KEY" "$CLAUDE_MODEL_ID" "$MODEL_REF" <<'PY'
 import json, sys
-out, provider, base, key, mid, mref = sys.argv[1:7]
+out, base, gpt_key, gpt_mid, claude_key, claude_mid, mref = sys.argv[1:8]
+
+def model_entry(mid, ctx=128000, max_tok=8192):
+    return {
+        "id": mid,
+        "name": mid,
+        "reasoning": False,
+        "input": ["text"],
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+        "contextWindow": ctx,
+        "maxTokens": max_tok,
+    }
+
+providers = {
+    "apipromax-gpt": {
+        "baseUrl": base,
+        "apiKey": gpt_key,
+        "api": "openai-completions",
+        "models": [model_entry(gpt_mid, 128000, 8192)],
+    },
+}
+if claude_key.strip():
+    providers["apipromax-claude"] = {
+        "baseUrl": base,
+        "apiKey": claude_key,
+        "api": "openai-completions",
+        "models": [model_entry(claude_mid, 200000, 8192)],
+    }
+
 patch = {
   "tools": {"profile": "coding"},
   "models": {
     "mode": "merge",
-    "providers": {
-      provider: {
-        "baseUrl": base,
-        "apiKey": key,
-        "api": "openai-completions",
-        "models": [{
-          "id": mid,
-          "name": mid,
-          "reasoning": False,
-          "input": ["text"],
-          "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-          "contextWindow": 128000,
-          "maxTokens": 8192,
-        }],
-      }
-    },
+    "providers": providers,
   },
   "agents": {
     "defaults": {
@@ -110,10 +137,17 @@ patch = {
 }
 with open(out, "w") as f:
   json.dump(patch, f)
+print("providers:", ", ".join(providers.keys()))
+print("default:", mref)
 PY
 openclaw config patch --file "$TMP_PATCH"
 rm -f "$TMP_PATCH"
 openclaw models set "$MODEL_REF" || log "aviso: models set falhou (pode já estar setado)"
+if [[ -n "$CLAUDE_KEY" ]]; then
+  log "provider apipromax-claude registrado (modelo ${CLAUDE_MODEL_ID}) — default continua ${MODEL_REF}"
+else
+  log "aviso: APIPROMAX_CLAUDE_API_KEY vazio — só apipromax-gpt registrado"
+fi
 
 # --- 2) Workspaces + agents.add ---------------------------------------------
 agent_exists() {
@@ -245,9 +279,12 @@ if [[ "$SKIP_HERMES_TG_DISABLE" != "1" ]]; then
     tmp="$(mktemp)"
     grep -vE '^TELEGRAM_(BOT_TOKEN|ALLOWED_USERS|HOME_CHANNEL|HOME_CHANNEL_NAME)=' "$HERMES_ENV" >"$tmp" || true
     {
-      echo '# Telegram movido para OpenClaw (diretor). Hermes sem poll.'
+      echo '# Telegram = OpenClaw Diretor apenas. Hermes SEM poll (P1.4).'
+      echo '# Nao preencha TELEGRAM_* aqui — o entrypoint tambem unsets no processo.'
       echo 'TELEGRAM_BOT_TOKEN='
       echo 'TELEGRAM_ALLOWED_USERS='
+      echo 'TELEGRAM_HOME_CHANNEL='
+      echo 'TELEGRAM_HOME_CHANNEL_NAME='
     } >>"$tmp"
     mv "$tmp" "$HERMES_ENV"
     chmod 600 "$HERMES_ENV"

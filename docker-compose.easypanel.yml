@@ -38,6 +38,13 @@ services:
       - GOOGLE_ADS_CUSTOMER_ID=${GOOGLE_ADS_CUSTOMER_ID:-}
       - GOOGLE_ADS_USE_PROTO_PLUS=True
       - ATLASCLOUD_API_KEY=${ATLASCLOUD_API_KEY:-}
+      # ApiProMax — providers OpenClaw (GPT + Claude). Ver docs/APIPROMAX.md.
+      - APIPROMAX_BASE_URL=${APIPROMAX_BASE_URL:-https://apipromax.online/v1}
+      - APIPROMAX_GPT_API_KEY=${APIPROMAX_GPT_API_KEY:-}
+      - APIPROMAX_CLAUDE_API_KEY=${APIPROMAX_CLAUDE_API_KEY:-}
+      - APIPROMAX_DEFAULT_MODEL=${APIPROMAX_DEFAULT_MODEL:-gpt-5.4-mini}
+      - APIPROMAX_CLAUDE_MODEL=${APIPROMAX_CLAUDE_MODEL:-claude-sonnet-5}
+      - OPENCLAW_DEFAULT_PROVIDER=${OPENCLAW_DEFAULT_PROVIDER:-apipromax-gpt}
       - PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       - API_SERVER_KEY=${HERMES_API_SERVER_KEY:-}
       - HERMES_API_PORT=${HERMES_API_PORT:-8642}

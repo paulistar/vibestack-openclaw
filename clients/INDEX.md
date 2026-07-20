@@ -4,12 +4,12 @@ Pasta canônica de contexto de contas. Cada cliente vive em `clients/<slug>/`.
 
 | slug | Nome | Status | Notas |
 |------|------|--------|-------|
-| `mart-studios` | Mart Studios | seed / TODO | Preencher PROFILE e brand com dados reais |
-| `difrare` | Difrare | seed / TODO | Preencher PROFILE e brand com dados reais |
+| `mart-studios` | Mart Studios | seed operacional | Agência dona da stack; completar IDs/oferta no bot |
+| `difrare` | Difrare | seed / TODO | Cliente; facts finais via Telegram (P1.2) |
 
 ## Como adicionar
 
-**Preferido (Telegram):** diga ao Diretor “temos um cliente novo…” + fatos. O agente `cliente` cria a pasta a partir de `_template`, preenche os 4 arquivos e atualiza esta tabela. “Mais info: …” faz merge. Ver `docs/CLIENTES.md`.
+**Preferido (Telegram):** diga ao Diretor “temos um cliente novo…” + fatos. O agente `cliente` cria a pasta a partir de `_template`, preenche os 4 arquivos e atualiza esta tabela. “Mais info: …” faz merge. Ver `docs/CLIENTES.md` e checklist em `docs/PLANO-P1.md`.
 
 **Manual / seed no repo** (opcional):
 

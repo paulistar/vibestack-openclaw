@@ -1,16 +1,17 @@
 # Ofertas — Mart Studios
 
-## Oferta 1 — TODO nome
+## Oferta 1 — Gestão de mídia + criativos (seed)
 
 | Campo | Valor |
 |-------|-------|
-| Status | teste |
-| Promessa | TODO |
-| Preço / condição | TODO |
-| CTA | TODO |
+| Status | ativo (seed) |
+| Promessa | Operação de Meta/Google + criativos com rituais semanais |
+| Preço / condição | TODO — fee + % mídia |
+| CTA | Agendar diagnóstico / call |
 | Landing / URL | TODO |
 | Prova social | TODO |
 
 ## O que NÃO vender agora
 
-- TODO — listar produtos/serviços fora de escopo atual
+- White-label de stack sem acordo escrito
+- Garantia de ROAS sem baseline de dados

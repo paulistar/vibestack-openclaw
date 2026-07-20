@@ -100,7 +100,8 @@ docker cp agency openclaw-vibestack-wa:/tmp/agency
 docker cp clients openclaw-vibestack-wa:/tmp/clients
 
 docker exec \
-  -e APIPROMAX_BASE_URL -e APIPROMAX_GPT_API_KEY -e APIPROMAX_DEFAULT_MODEL \
+  -e APIPROMAX_BASE_URL -e APIPROMAX_GPT_API_KEY -e APIPROMAX_CLAUDE_API_KEY \
+  -e APIPROMAX_DEFAULT_MODEL -e APIPROMAX_CLAUDE_MODEL \
   -e TELEGRAM_BOT_TOKEN -e TELEGRAM_ALLOWED_USERS \
   -e AGENCY_SRC=/tmp/agency \
   -e CLIENTS_SRC=/tmp/clients \

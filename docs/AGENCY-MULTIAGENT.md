@@ -12,7 +12,7 @@ Templates: [`agency/`](../agency/). Tutorial upstream: Passo 13 do README.
 | Agentes OpenClaw | `diretor` (default), `cliente`, `analista`, `estrategista`, `copywriter`, `criativo`, `gestor` (+ `main` legado) |
 | Contexto de clientes | `clients/<slug>/` → `/root/.openclaw/workspace/clients/` — ver [CLIENTES.md](./CLIENTES.md) |
 | Subagentes | `maxSpawnDepth: 2`, `allowAgents: ["*"]`, `announceTimeoutMs: 300000` |
-| Modelo | `apipromax-gpt/<APIPROMAX_DEFAULT_MODEL>` (ex.: `gpt-5.4-mini`) |
+| Modelo | Default `apipromax-gpt/<APIPROMAX_DEFAULT_MODEL>`; opcional `apipromax-claude/<APIPROMAX_CLAUDE_MODEL>` (ver [APIPROMAX.md](./APIPROMAX.md), [PLANO-P1.md](./PLANO-P1.md)) |
 | Tools MCP | `tools.profile: coding` → meta-ads, google-ads, whatsapp, etc. |
 | Telegram | **OpenClaw nativo** → bind no **Diretor** (Hermes deixa de fazer poll no mesmo bot) |
 | WhatsApp | Bridge Evolution: `WA_BRIDGE_AGENT=openclaw` + `WA_BRIDGE_OPENCLAW_AGENT=diretor` |
@@ -34,7 +34,9 @@ docker cp agency openclaw-vibestack-wa:/tmp/agency
 docker cp clients openclaw-vibestack-wa:/tmp/clients
 
 docker exec \
-  -e APIPROMAX_BASE_URL -e APIPROMAX_GPT_API_KEY -e APIPROMAX_DEFAULT_MODEL \
+  -e APIPROMAX_BASE_URL -e APIPROMAX_GPT_API_KEY -e APIPROMAX_CLAUDE_API_KEY \
+  -e APIPROMAX_DEFAULT_MODEL -e APIPROMAX_CLAUDE_MODEL \
+  -e OPENCLAW_DEFAULT_PROVIDER \
   -e TELEGRAM_BOT_TOKEN -e TELEGRAM_ALLOWED_USERS \
   -e AGENCY_SRC=/tmp/agency \
   -e CLIENTS_SRC=/tmp/clients \
@@ -94,7 +96,7 @@ Você (Telegram/WA) → Diretor
 | **OpenClaw → Diretor** (recomendado aqui) | Arquitetura completa da agência + spawn |
 | Hermes Telegram 1-agente | Chat rápido sem orquestração (docs/TELEGRAM-SETUP.md legado) |
 
-Não rode os dois em long-poll no **mesmo** `TELEGRAM_BOT_TOKEN` — o bootstrap zera o token no volume Hermes.
+Não rode os dois em long-poll no **mesmo** `TELEGRAM_BOT_TOKEN`. O bootstrap zera o token no volume Hermes; o entrypoint também faz **unset** de `TELEGRAM_*` no processo `hermes gateway run` (o compose ainda passa o token ao container para o OpenClaw). Plano: [PLANO-P1.md](./PLANO-P1.md) P1.4.
 
 ## WhatsApp → Diretor
 
