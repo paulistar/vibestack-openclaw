@@ -11,12 +11,7 @@
 #
 # NÃO PERDER no redeploy / Deploy cego:
 #   1. .env na VPS (nunca no Git) — tokens Evolution/OpenClaw/Postgres
-#   2. defaults bridge→Ollama (já em docker-compose.easypanel.yml):
-#        WA_BRIDGE_UPSTREAM=http://127.0.0.1:11434
-#        WA_BRIDGE_MODEL=llama3.2:3b
-#        WA_BRIDGE_ACK_AFTER=15
-#        WA_BRIDGE_UPSTREAM_TIMEOUT=90
-#        OLLAMA_CONTEXT_LENGTH / OLLAMA_NUM_CTX = 1024
+#   2. defaults bridge→Ollama (já em docker-compose.easypanel.yml)
 #   3. redes easypanel + aliases Traefik (já no easypanel.yml)
 #   4. volumes nomeados (openclaw-data, evolution-data, ollama-data, …)
 #
@@ -29,16 +24,26 @@ networks:
 
 services:
   openclaw-vibestack:
+    # Entrypoint do host (bridge CEDO + timeout MCP). Bind em path dedicado —
+    # montar em cima de /usr/local/bin/entrypoint.sh falhou com "not a directory".
+    entrypoint: ["/bin/sh", "/app/host-entrypoint.sh"]
+    volumes:
+      # Hot-fix middleware sem rebuild da imagem (fast-greeting etc.)
+      - ./middleware:/app/middleware:ro
+      - ./entrypoint.sh:/app/host-entrypoint.sh:ro
+    container_name: openclaw-vibestack-wa
+    ports: []
     environment:
-      # Ollama CPU: contexto curto = 1ª resposta em tempo útil.
-      - OLLAMA_CONTEXT_LENGTH=1024
-      - OLLAMA_NUM_CTX=1024
-      # Bridge WhatsApp → Ollama direto (OpenAI-compat), sem Hermes pesado.
-      - WA_BRIDGE_AGENT=hermes
-      - WA_BRIDGE_UPSTREAM=http://127.0.0.1:11434
-      - WA_BRIDGE_MODEL=llama3.2:3b
-      - WA_BRIDGE_ACK_AFTER=15
-      - WA_BRIDGE_UPSTREAM_TIMEOUT=90
+      # Ollama CPU: contexto curto = 1ª resposta em tempo útil (<90s).
+      - OLLAMA_CONTEXT_LENGTH=512
+      - OLLAMA_NUM_CTX=512
+      - OLLAMA_NUM_PARALLEL=1
+      # Bridge WhatsApp → OpenClaw Diretor (orquestrador da agência).
+      # NÃO aponta mais para Hermes/Ollama como cérebro do canal.
+      - WA_BRIDGE_AGENT=openclaw
+      - WA_BRIDGE_OPENCLAW_AGENT=diretor
+      - WA_BRIDGE_ACK_AFTER=20
+      - WA_BRIDGE_UPSTREAM_TIMEOUT=300
     networks:
       # Keep project default so DNS `evolution-go` / `openclaw-vibestack` works.
       default:

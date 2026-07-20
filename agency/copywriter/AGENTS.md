@@ -12,7 +12,7 @@ Por solicitação, 3 variações de cada campo Meta:
 ## Formato da entrega
 
 ```
-PRODUTO: {{{PRODUTO_1}} | {{PRODUTO_2}} | outro}
+PRODUTO: Agência Mart — tráfego pago | Agência Mart — criativos e conversão | outro}
 BRIEFING: {1 linha do que a Estrategista pediu}
 
 VARIAÇÃO 1 — {ângulo}
