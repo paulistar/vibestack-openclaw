@@ -19,7 +19,7 @@ Deploy: `docker-compose.easypanel.yml` + `docker-compose.override.yml` — **nun
 |---|------|--------|
 | 1 | **P1.4** Limpar/desativar Telegram no Hermes; só OpenClaw Diretor no TG | [x] |
 | 2 | **P1.3** Provider Claude (`apipromax-claude`) no OpenClaw | [x] código / deploy |
-| 3 | **P1.2** Seeds `mart-studios` / `difrare` + ingestão Telegram | [x] seeds / [ ] dados finais via bot |
+| 3 | **P1.2** Seeds `mart-studios` / `difrare` com **dados reais** + sync volume | [x] **feito** (não opcional) |
 | 4 | **P1.1** Keys Meta / Google / B2 (MCPs) | [x] docs+example / [!] **AGUARDANDO KEYS** |
 
 ---
@@ -61,40 +61,23 @@ Modelos Claude no catálogo: `claude-sonnet-5`, `claude-opus-4-7`, `claude-opus-
 
 ---
 
-## P1.2 — Seeds + ingestão Telegram
+## P1.2 — Clientes com dados reais (obrigatório)
 
-### Feito
-- [x] Seeds `mart-studios` / `difrare` utilizáveis (baseline + TODOs claros)
-- [x] `clients/INDEX.md` + checklist abaixo
-- [x] Sync via bootstrap `CLIENTS_SRC` → workspace
+### Objetivo
+`clients/mart-studios/` e `clients/difrare/` utilizáveis pelo agente `cliente` **sem** depender de checklist Telegram. Gaps pontuais usam `[A CONFIRMAR]` — não template vazio.
 
-### Ainda via Telegram (usuário)
-- [ ] Completar IDs ads, ofertas e brand finais no bot
+### Feito (2026-07-20)
+- [x] **Mart Studios** — PROFILE/brand/offers/history: site `martstudiosbr.com.br`, tagline, Instagram `@martstudiosbr`, TG `@chatmartstudios_bot`, domínios agência/painel/evo/hermes, e-mail `assessoria@martstudiosbr.com`, MCC Google `1455071541`, ofertas (mídia, e-com Mart Art, OpenClaw)
+- [x] **Difrare** — PROFILE/brand/offers/history: `difrare.com.br`, moda feminina produção própria, Italian Plum `#533147` + Playfair/Inter, WhatsApp `(15) 98183-0000`, endereço Tietê/SP, lookbook/atacado, SKUs/preços Store API, cupom `BEMVINDA10`, stack Woo+MP+Bling+Resend
+- [x] `clients/INDEX.md` atualizado (status **ativo**)
+- [x] Sync volume VPS `/root/.openclaw/workspace/clients/` (via bootstrap `CLIENTS_SRC` / cópia)
+- [x] Confirmação: agente `cliente` consegue ler os arquivos no path do container
 
-### Checklist — mandar ao Diretor (@chatmartstudios_bot)
+### Ainda `[A CONFIRMAR]` (pontual — não bloqueia P1.2)
+- Mart: `act_` Meta; Customer ID Google próprio; fee comercial; número WhatsApp DDI
+- Difrare: `act_` Meta; Google Ads Customer ID; tabela atacado; alvos CPA/ROAS; UGC/avaliações públicas
 
-**Mart Studios**
-```
-Mais info mart-studios:
-- Contato principal: (nome + WhatsApp/Telegram)
-- Meta Ad Account ID: act_…
-- Google Ads Customer ID: …
-- Oferta principal: nome, preço, CTA, URL
-- Cores / tipografia / o que NÃO usar em criativos
-```
-
-**Difrare**
-```
-Mais info difrare:
-- Site oficial / Instagram
-- Segmento + ticket médio
-- ICP: quem, dor, objeção
-- Meta Ad Account ID + Google Ads Customer ID
-- Ofertas ativas (promessa, preço, CTA, landing)
-- O que NÃO vender agora
-- Tom: 2 frases OK + 2 proibidas
-- Claims / disclaimers se aplicável
-```
+Telegram “Mais info …” continua válido para **completar gaps**, não para preencher o perfil do zero.
 
 ---
 
@@ -143,6 +126,7 @@ COMPOSE_PROJECT_NAME=vibestack-openclaw \
 
 - `4fbddec` — `feat: plano P1 — Hermes TG off, Claude OpenClaw, seeds e docs MCP` (em `origin/main`)
 - `31a6de0` — `docs: fechar PLANO-P1 com commit 4fbddec e status VPS`
+- *(P1.2 dados reais)* — `clients/mart-studios` + `clients/difrare` + `PLANO-P1.md`
 
 ## Deploy VPS (fechamento)
 
@@ -150,3 +134,4 @@ COMPOSE_PROJECT_NAME=vibestack-openclaw \
 - [x] Recreate só `openclaw-vibestack` (easypanel + override) — Evolution **não** tocado (`agenciamart-vibestack-evolution-go-1` Up)
 - [x] Bootstrap: providers `apipromax-gpt` + `apipromax-claude`; clients sync (`mart-studios`, `difrare`)
 - [x] Confirmação: Hermes Telegram `✗ not configured`; OpenClaw TG `@chatmartstudios_bot` polling
+- [ ] Pós-P1.2: `git pull` + sync `clients/` no volume (sem recreate Evolution)
