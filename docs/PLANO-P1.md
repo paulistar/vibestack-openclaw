@@ -141,4 +141,11 @@ COMPOSE_PROJECT_NAME=vibestack-openclaw \
 
 ## Commits desta rodada
 
-*(preenchido após push)*
+- `4fbddec` — `feat: plano P1 — Hermes TG off, Claude OpenClaw, seeds e docs MCP` (em `origin/main`)
+
+## Deploy VPS (fechamento)
+
+- [x] `git pull` em `/opt/agenciamart-ia/vibestack-openclaw` → `4fbddec`
+- [x] Recreate só `openclaw-vibestack` (easypanel + override) — Evolution **não** tocado (`agenciamart-vibestack-evolution-go-1` Up)
+- [x] Bootstrap: providers `apipromax-gpt` + `apipromax-claude`; clients sync (`mart-studios`, `difrare`)
+- [x] Confirmação: Hermes Telegram `✗ not configured`; OpenClaw TG `@chatmartstudios_bot` polling
