@@ -51,6 +51,9 @@ services:
       - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
       # Dashboard web do Hermes (pagina de gestao/chat) — porta separada da API.
       - HERMES_WEB_PORT=${HERMES_WEB_PORT:-9119}
+      # Telegram (OpenClaw Diretor prioritario). Nao habilitar poll Hermes no mesmo token.
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
       # WhatsApp via Evolution Go — o middleware MCP alcanca a API pelo DNS de
       # servico do compose (http://evolution-go:8080). Auth: GLOBAL (admin/create)
       # + token da instancia (send/qr/status).
@@ -82,8 +85,11 @@ services:
       - WA_BRIDGE_UPSTREAM_KEY=${HERMES_API_SERVER_KEY:-}
       - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
       # Tarefas longas (gerar criativo etc.): timeout do agente e aviso de "processando".
-      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-90}
+      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-180}
       - WA_BRIDGE_ACK_AFTER=${WA_BRIDGE_ACK_AFTER:-20}
+      - WA_BRIDGE_MAX_TOKENS=${WA_BRIDGE_MAX_TOKENS:-128}
+      - WA_BRIDGE_NUM_CTX=${WA_BRIDGE_NUM_CTX:-1024}
+      - WA_BRIDGE_NUM_PREDICT=${WA_BRIDGE_NUM_PREDICT:-128}
     volumes:
       # UM mount só, abrangendo tudo do OpenClaw
       - ${OPENCLAW_DATA_DIR}:/root/.openclaw

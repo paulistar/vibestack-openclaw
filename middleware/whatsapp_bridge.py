@@ -34,6 +34,10 @@ Env:
   WA_BRIDGE_SESSION_PREFIX  prefixo da sessão por contato (default 'wa')
   WA_BRIDGE_ALLOWED_NUMBERS CSV de números permitidos (vazio = todos; recomendado preencher)
   WA_BRIDGE_UPSTREAM_TIMEOUT timeout (s) da chamada ao agente (default 0 = ILIMITADO; localhost)
+  WA_BRIDGE_MAX_TOKENS      teto de tokens na resposta (default 128; Ollama CPU)
+  WA_BRIDGE_NUM_CTX         num_ctx Ollama por request (default OLLAMA_NUM_CTX ou 1024)
+  WA_BRIDGE_NUM_PREDICT     num_predict Ollama (default = MAX_TOKENS)
+  WA_BRIDGE_SYSTEM_PROMPT   system prompt curto (vazio = sem system)
   EVOLUTION_BASE_URL        base do Evolution Go (default http://evolution-go:8080)
   EVOLUTION_INSTANCE_TOKEN  token da instância (apikey de envio)
 """
@@ -63,6 +67,32 @@ SESSION_PREFIX = os.environ.get("WA_BRIDGE_SESSION_PREFIX", "wa")
 UPSTREAM_TIMEOUT = int(os.environ.get("WA_BRIDGE_UPSTREAM_TIMEOUT", "0"))
 _TIMEOUT = UPSTREAM_TIMEOUT if UPSTREAM_TIMEOUT > 0 else None
 ACK_AFTER = int(os.environ.get("WA_BRIDGE_ACK_AFTER", "20"))  # avisa "processando" se passar disso (0 = off)
+# Caps p/ Ollama CPU (OpenAI-compat /v1/chat/completions + options nativos).
+MAX_TOKENS = int(os.environ.get("WA_BRIDGE_MAX_TOKENS", "128"))
+NUM_CTX = int(os.environ.get("WA_BRIDGE_NUM_CTX", os.environ.get("OLLAMA_NUM_CTX", "1024")))
+NUM_PREDICT = int(os.environ.get("WA_BRIDGE_NUM_PREDICT", str(MAX_TOKENS)))
+SYSTEM_PROMPT = os.environ.get(
+    "WA_BRIDGE_SYSTEM_PROMPT",
+    "Responda em português, de forma breve e útil (até ~4 frases).",
+).strip()
+# Path rápido: saudações curtas sem LLM (CPU Ollama sob carga alta estoura timeout).
+FAST_GREETING = os.environ.get(
+    "WA_BRIDGE_FAST_GREETING",
+    "Olá! Sou o assistente da Mart Studios. Como posso ajudar?",
+).strip()
+TIMEOUT_FALLBACK = os.environ.get(
+    "WA_BRIDGE_TIMEOUT_FALLBACK",
+    "Oi! Recebi sua mensagem, mas estou um pouco lento agora. "
+    "Pode repetir em uma frase curta?",
+).strip()
+# 1 request por vez evita fila/timeout em CPU.
+_UPSTREAM_LOCK = threading.Lock()
+_GREETING_RE = re.compile(
+    r"^(ol[aá]|oi+|oie|opa|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite)"
+    r"([\s,!.?]|(tudo\s*bem)|(como\s*vai))*$",
+    re.IGNORECASE,
+)
+_SHORT_FAST_MAX_CHARS = int(os.environ.get("WA_BRIDGE_FAST_MAX_CHARS", "48"))
 # OpenClaw: agente especifico (binding) opcional pra rota desse canal.
 OPENCLAW_AGENT_ID = os.environ.get("WA_BRIDGE_OPENCLAW_AGENT", "").strip()
 EVOLUTION_BASE_URL = os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080").rstrip("/")
@@ -251,15 +281,102 @@ def _extract(data: dict) -> dict | None:
     return {"number": number, "text": str(text), "msg_id": msg_id, "media": media}
 
 
-def _ask_hermes(number: str, text: str) -> str:
-    """Hermes: HTTP /v1/chat/completions, sessão por contato (X-Hermes-Session-Id)."""
-    if not UPSTREAM_KEY:
-        return "(bridge sem WA_BRIDGE_UPSTREAM_KEY configurada)"
+def _is_ollama_upstream() -> bool:
+    """True se WA_BRIDGE_UPSTREAM aponta pro Ollama (11434), não Hermes (8642)."""
+    u = UPSTREAM.lower()
+    return ":11434" in u or u.rstrip("/").endswith("11434")
+
+
+def _is_greeting(text: str) -> bool:
+    t = (text or "").strip()
+    if not t or len(t) > 40:
+        return False
+    return bool(_GREETING_RE.match(t))
+
+
+def _is_short_fast(text: str) -> bool:
+    t = (text or "").strip()
+    return bool(t) and len(t) <= _SHORT_FAST_MAX_CHARS and len(t.split()) <= 10
+
+
+def _chat_payload(messages: list, *, max_tokens: int | None = None, num_ctx: int | None = None,
+                  num_predict: int | None = None) -> dict:
+    """Body OpenAI-compat + options Ollama (ctx/predict curtos = CPU utilizável)."""
+    mt = MAX_TOKENS if max_tokens is None else max_tokens
+    nc = NUM_CTX if num_ctx is None else num_ctx
+    np_ = NUM_PREDICT if num_predict is None else num_predict
+    payload = {
+        "model": MODEL,
+        "messages": messages,
+        "stream": False,
+        "max_tokens": mt,
+        "keep_alive": "30m",
+    }
+    # Ollama ignora extras desconhecidos; Hermes também tolera options na prática.
+    if nc > 0 or np_ > 0:
+        opts = {}
+        if nc > 0:
+            opts["num_ctx"] = nc
+        if np_ > 0:
+            opts["num_predict"] = np_
+        payload["options"] = opts
+    return payload
+
+
+def _ask_ollama_generate(text: str) -> str:
+    """Ollama nativo /api/generate — prompt mínimo, sem system pesado (path rápido)."""
+    prompt = (
+        f"Responda em português, em no máximo 2 frases curtas.\n"
+        f"Usuário: {text.strip()}\nAssistente:"
+    )
+    # ctx/predict bem baixos: saudação/pedido curto em CPU.
     body = json.dumps({
         "model": MODEL,
-        "messages": [{"role": "user", "content": text}],
+        "prompt": prompt,
         "stream": False,
+        "keep_alive": "30m",
+        "options": {
+            "num_ctx": min(NUM_CTX, 256) if NUM_CTX > 0 else 256,
+            "num_predict": min(NUM_PREDICT, 48) if NUM_PREDICT > 0 else 48,
+            "temperature": 0.3,
+        },
     }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{UPSTREAM}/api/generate",
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with _UPSTREAM_LOCK:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            out = json.loads(resp.read().decode("utf-8"))
+    reply = (out.get("response") or "").strip()
+    return reply or "(resposta vazia)"
+
+
+def _ask_hermes(number: str, text: str) -> str:
+    """Hermes/Ollama: HTTP /v1/chat/completions, sessão por contato (X-Hermes-Session-Id)."""
+    if not UPSTREAM_KEY:
+        return "(bridge sem WA_BRIDGE_UPSTREAM_KEY configurada)"
+    # Path rápido Ollama: prompt curto → /api/generate sem system.
+    if _is_ollama_upstream() and _is_short_fast(text):
+        try:
+            return _ask_ollama_generate(text)
+        except Exception as e:  # noqa: BLE001 — fallback pro chat/completions
+            _log(f"fast generate falhou ({e}); caindo em chat/completions")
+    messages = []
+    # Em Ollama, system prompt curto já vem no generate; no chat evita system se vazio.
+    if SYSTEM_PROMPT and not (_is_ollama_upstream() and _is_short_fast(text)):
+        messages.append({"role": "system", "content": SYSTEM_PROMPT})
+    messages.append({"role": "user", "content": text})
+    # Pedidos curtos: caps ainda menores p/ caber no timeout sob CPU saturada.
+    short = _is_short_fast(text)
+    body = json.dumps(_chat_payload(
+        messages,
+        max_tokens=min(MAX_TOKENS, 48) if short else None,
+        num_ctx=min(NUM_CTX, 256) if short and NUM_CTX > 0 else None,
+        num_predict=min(NUM_PREDICT, 48) if short else None,
+    )).encode("utf-8")
     req = urllib.request.Request(
         f"{UPSTREAM}/v1/chat/completions",
         data=body,
@@ -270,8 +387,9 @@ def _ask_hermes(number: str, text: str) -> str:
             "X-Hermes-Session-Id": _session_key(number),
         },
     )
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        out = json.loads(resp.read().decode("utf-8"))
+    with _UPSTREAM_LOCK:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            out = json.loads(resp.read().decode("utf-8"))
     try:
         return out["choices"][0]["message"]["content"] or "(resposta vazia)"
     except (KeyError, IndexError, TypeError):
@@ -329,6 +447,10 @@ def _ask_openclaw(number: str, text: str) -> str:
 
 def _ask_agent(number: str, text: str) -> str:
     """Despacha pro agente configurado (WA_BRIDGE_AGENT)."""
+    # Saudações: resposta imediata sem LLM (evita ACK+timeout sob carga Ollama CPU).
+    if FAST_GREETING and _is_greeting(text):
+        _log(f"fast-greeting -> {number}: {text[:40]!r}")
+        return FAST_GREETING
     if AGENT == "openclaw":
         return _ask_openclaw(number, text)
     return _ask_hermes(number, text)
@@ -372,8 +494,11 @@ def _process(number: str, text: str) -> None:
     try:
         reply = _ask_agent(number, text)
         done.set()
-        _send_whatsapp(number, reply)
         _log(f"out -> {number}: {reply[:80]!r}")
+        try:
+            _send_whatsapp(number, reply)
+        except Exception as send_err:  # noqa: BLE001
+            _log(f"erro enviando out pra {number}: {send_err}")
     except urllib.error.HTTPError as e:
         done.set()
         _log(f"ERRO HTTP {e.code} processando {number}: {e.read()[:200]!r}")
@@ -381,9 +506,14 @@ def _process(number: str, text: str) -> None:
     except Exception as e:  # noqa: BLE001
         done.set()
         _log(f"ERRO processando {number}: {e}")
-        msg = ("⏳ A operação demorou mais que o limite e foi interrompida. "
-               "Tente dividir em passos menores, ou repita o pedido.") if "timed out" in str(e).lower() \
-              else "⚠️ Não consegui concluir agora. Pode tentar de novo?"
+        if "timed out" in str(e).lower():
+            # Melhor template curto do que erro frio — Ollama CPU sob load alto.
+            msg = TIMEOUT_FALLBACK or (
+                "⏳ A operação demorou mais que o limite e foi interrompida. "
+                "Tente dividir em passos menores, ou repita o pedido."
+            )
+        else:
+            msg = "⚠️ Não consegui concluir agora. Pode tentar de novo?"
         _reply_safe(number, msg)
 
 

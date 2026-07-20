@@ -37,3 +37,33 @@ Preencha no `.env` (CSV DDI+DDD+número) quando souber o(s) número(s) — ex.: 
 
 Sem chave cloud nos secrets locais → stack usa Ollama `llama3.2:3b`.  
 Não bloqueia operação; adicionar `ATLASCLOUD_API_KEY` / similar só se quiser modelo cloud.
+
+## Telegram (OpenClaw Diretor — prioridade)
+
+Canal **OpenClaw nativo** → agente **`diretor`** (orquestra a agência). Não usa Evolution.
+Detalhes: [AGENCY-MULTIAGENT.md](./AGENCY-MULTIAGENT.md) · [TELEGRAM-SETUP.md](./TELEGRAM-SETUP.md).
+
+**Não** rode Hermes long-poll no mesmo `TELEGRAM_BOT_TOKEN` — o bootstrap zera o token no volume Hermes.
+
+1. Crie o bot no [@BotFather](https://t.me/BotFather) → `/newbot` → copie o token.
+2. Descubra seu user id numérico com [@userinfobot](https://t.me/userinfobot).
+3. Preencha no `.env` da VPS (`/opt/agenciamart-ia/vibestack-openclaw/.env`):
+
+```bash
+TELEGRAM_BOT_TOKEN=123456789:AA...
+TELEGRAM_ALLOWED_USERS=SEU_ID_NUMERICO
+```
+
+4. Rode o bootstrap da agência (grava `channels.telegram` + bind no Diretor) e reinicie só o OpenClaw (não o Evolution):
+
+```bash
+# ver docs/AGENCY-MULTIAGENT.md — bootstrap-agency-openclaw.sh
+docker restart openclaw-vibestack-wa
+docker exec openclaw-vibestack-wa openclaw channels status --probe
+```
+
+5. No Telegram: abra o bot → `/start` → envie uma mensagem de teste.
+
+Placeholders também em `~/.vibestack-openclaw-easypanel.env` (local) e `.env.example`.
+
+Legado 1-agente (Hermes Telegram): [TELEGRAM-SETUP.md](./TELEGRAM-SETUP.md). LLM Hermes/ApiProMax: [APIPROMAX.md](./APIPROMAX.md).

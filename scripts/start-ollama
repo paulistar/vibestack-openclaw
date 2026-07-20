@@ -6,10 +6,24 @@ if ! command -v ollama >/dev/null 2>&1; then
   echo "[start-ollama] ollama nao instalado nesta imagem (INSTALL_OLLAMA=false). Nada a fazer."
   exit 0
 fi
+# Sempre exportar antes de qualquer check — se o serve ja existir sem
+# OLLAMA_CONTEXT_LENGTH, o modelo sobe com ctx default (4096) e satura CPU.
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-${OLLAMA_NUM_CTX:-512}}"
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
 if curl -sf http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-  echo "[start-ollama] ollama ja' esta' rodando (porta 11434)."
-  exit 0
+  # Serve legado sem ctx curto: reinicia para aplicar OLLAMA_CONTEXT_LENGTH.
+  cur_ctx="$(tr '\0' '\n' < /proc/$(pgrep -n -f 'ollama serve')/environ 2>/dev/null | sed -n 's/^OLLAMA_CONTEXT_LENGTH=//p')"
+  if [ -n "$cur_ctx" ] && [ "$cur_ctx" = "$OLLAMA_CONTEXT_LENGTH" ]; then
+    echo "[start-ollama] ollama ja' esta' rodando (porta 11434, ctx=$cur_ctx)."
+    exit 0
+  fi
+  echo "[start-ollama] reiniciando ollama para aplicar OLLAMA_CONTEXT_LENGTH=$OLLAMA_CONTEXT_LENGTH (era=${cur_ctx:-unset})"
+  pkill -f 'ollama serve' 2>/dev/null || true
+  sleep 2
+  pkill -9 -f llama-server 2>/dev/null || true
+  sleep 1
 fi
+echo "[start-ollama] OLLAMA_CONTEXT_LENGTH=$OLLAMA_CONTEXT_LENGTH OLLAMA_NUM_PARALLEL=$OLLAMA_NUM_PARALLEL"
 nohup ollama serve >/var/log/ollama.log 2>&1 &
 OLLAMA_PID=$!
 i=1

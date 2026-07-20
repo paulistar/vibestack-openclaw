@@ -43,6 +43,9 @@ services:
       - HERMES_API_PORT=${HERMES_API_PORT:-8642}
       - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
       - HERMES_WEB_PORT=${HERMES_WEB_PORT:-9119}
+      # Telegram (OpenClaw Diretor prioritário). Não habilitar poll Hermes no mesmo token.
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
       - EVOLUTION_BASE_URL=http://evolution-go:8080
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
       - EVOLUTION_INSTANCE_TOKEN=${EVOLUTION_INSTANCE_TOKEN:-}
@@ -64,10 +67,15 @@ services:
       - WA_BRIDGE_UPSTREAM=${WA_BRIDGE_UPSTREAM:-http://127.0.0.1:11434}
       - WA_BRIDGE_MODEL=${WA_BRIDGE_MODEL:-llama3.2:3b}
       - WA_BRIDGE_ALLOWED_NUMBERS=${WA_BRIDGE_ALLOWED_NUMBERS:-}
-      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-90}
-      - WA_BRIDGE_ACK_AFTER=${WA_BRIDGE_ACK_AFTER:-15}
-      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-1024}
-      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-1024}
+      - WA_BRIDGE_UPSTREAM_TIMEOUT=${WA_BRIDGE_UPSTREAM_TIMEOUT:-300}
+      - WA_BRIDGE_ACK_AFTER=${WA_BRIDGE_ACK_AFTER:-30}
+      - WA_BRIDGE_MAX_TOKENS=${WA_BRIDGE_MAX_TOKENS:-64}
+      - WA_BRIDGE_NUM_CTX=${WA_BRIDGE_NUM_CTX:-512}
+      - WA_BRIDGE_NUM_PREDICT=${WA_BRIDGE_NUM_PREDICT:-64}
+      - WA_BRIDGE_SYSTEM_PROMPT=${WA_BRIDGE_SYSTEM_PROMPT:-Responda em português, em até 2 frases curtas.}
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-512}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-512}
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
       - B2_KEY_ID=${B2_KEY_ID:-}
       - B2_APP_KEY=${B2_APP_KEY:-}
       - B2_BUCKET=${B2_BUCKET:-}
@@ -75,6 +83,9 @@ services:
     volumes:
       - openclaw-data:/root/.openclaw
       - ollama-data:/var/lib/ollama
+      # Hotfix WA bridge sem rebuild (EasyPanel: arquivos no clone da VPS).
+      - ./middleware/whatsapp_bridge.py:/app/middleware/whatsapp_bridge.py:ro
+      - ./scripts/start-ollama:/usr/local/bin/start-ollama:ro
       - lmstudio-data:/root/.lmstudio/models
       - hermes-data:/root/.hermes
       - higgsfield-data:/root/.higgsfield

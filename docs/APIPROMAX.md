@@ -1,6 +1,10 @@
 # ApiProMax — providers GPT e Claude no Vibestack
 
-Proxy OpenAI-compatible (`https://apipromax.online/v1`) usado como **default do Hermes** (Telegram e, se `WA_BRIDGE_AGENT=hermes`, também o canal WhatsApp). Ollama permanece como fallback opcional no `custom_providers`, não como default.
+Proxy OpenAI-compatible (`https://apipromax.online/v1`) usado como **default do Hermes** (legado Telegram 1-agente e, se `WA_BRIDGE_AGENT=hermes`, o canal WhatsApp).
+
+**Telegram prioritário da stack:** OpenClaw nativo → agente **Diretor** (não Hermes). Ver [AGENCY-MULTIAGENT.md](./AGENCY-MULTIAGENT.md).
+
+Ollama permanece como fallback opcional no `custom_providers`, não como default do Hermes.
 
 ## Variáveis (somente secrets locais / VPS)
 
@@ -8,7 +12,7 @@ Proxy OpenAI-compatible (`https://apipromax.online/v1`) usado como **default do 
 APIPROMAX_BASE_URL=https://apipromax.online/v1
 APIPROMAX_GPT_API_KEY=sk-...          # catálogo GPT
 APIPROMAX_CLAUDE_API_KEY=sk-...       # catálogo Claude
-APIPROMAX_DEFAULT_MODEL=gpt-5.4-mini  # default Telegram
+APIPROMAX_DEFAULT_MODEL=gpt-5.4-mini  # default Hermes (legado TG / api_server)
 ```
 
 Placeholders em `.env.example`. **Nunca** commitar keys reais.
@@ -78,4 +82,5 @@ docker restart openclaw-vibestack-wa   # NÃO reinicie o Evolution
 docker exec openclaw-vibestack-wa hermes status
 ```
 
-No Telegram: abra o bot → `/start` → `oi`.
+Smoke Hermes (legado TG): no bot Hermes `/start` → `oi`.
+Smoke OpenClaw Diretor (prioridade): `openclaw channels status --probe` + mensagem no bot OpenClaw.
