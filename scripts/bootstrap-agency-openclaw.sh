@@ -48,6 +48,14 @@ if [[ -d "$CLIENTS_SRC" ]]; then
 else
   log "aviso: CLIENTS_SRC ausente ($CLIENTS_SRC) — pulando sync de clients/"
 fi
+# Agente cliente grava via Telegram — garantir write no volume
+chmod -R u+rwX "$WS_ROOT/clients" 2>/dev/null || true
+if touch "$WS_ROOT/clients/.write-test" 2>/dev/null; then
+  rm -f "$WS_ROOT/clients/.write-test"
+  log "clients/ write OK ($WS_ROOT/clients)"
+else
+  log "AVISO: sem write em $WS_ROOT/clients — agente cliente não conseguirá gravar"
+fi
 
 # --- 1) Model provider ApiProMax (openai-completions) + defaults -------------
 log "configurando provider ${PROVIDER_ID} / modelo ${MODEL_REF}"
@@ -136,6 +144,13 @@ done
 # Agente cliente: atalho clients/ dentro do workspace (mesmo volume de _shared)
 if [[ -d "$WS_ROOT/clients" ]]; then
   ln -sfn ../clients "$WS_ROOT/cliente/clients" 2>/dev/null || true
+  # Garante que o workspace do agente resolve o symlink com write
+  if [[ -L "$WS_ROOT/cliente/clients" ]] || [[ -d "$WS_ROOT/cliente/clients" ]]; then
+    touch "$WS_ROOT/cliente/clients/.write-test" 2>/dev/null && \
+      rm -f "$WS_ROOT/cliente/clients/.write-test" && \
+      log "cliente/clients symlink write OK" || \
+      log "AVISO: write via cliente/clients falhou"
+  fi
 fi
 
 # Diretor = default (orquestrador). Edita openclaw.json diretamente (arrays do

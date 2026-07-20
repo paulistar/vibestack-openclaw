@@ -71,14 +71,15 @@ Fale com o **mesmo bot**; quem responde é o **Diretor** (OpenClaw). Exemplos:
 - `Quero uma análise crítica + recomendação de budget; se passar da alçada, me peça aprovação.`
 - `Com briefing X, peça à estrategista que convoque o copywriter (3 variações) — sem publicar.`
 - `Pro cliente mart-studios, consulte o agente cliente e me diga ICP + tom.` (ver [CLIENTES.md](./CLIENTES.md))
+- `Temos um cliente novo: …` — o Diretor spawna `cliente` para **gravar** em `clients/<slug>/` (Telegram-first; ver [CLIENTES.md](./CLIENTES.md)).
 
-O Diretor deve chamar `sessions_spawn` com `runtime: 'subagent'`, `agentId: 'cliente'|'analista'|…`, e **não** usar `sessions_yield` (não existe neste build). Em tarefa de cliente, **`cliente` vem antes** dos demais.
+O Diretor deve chamar `sessions_spawn` com `runtime: 'subagent'`, `agentId: 'cliente'|'analista'|…`, e **não** usar `sessions_yield` (não existe neste build). Em tarefa de cliente, **`cliente` vem antes** dos demais (ler ou escrever).
 
 ## Fluxo interno
 
 ```
 Você (Telegram/WA) → Diretor
-  → Cliente (contexto / validação de marca-ICP)  ← obrigatório em tarefa de cliente
+  → Cliente (lê contexto / **escreve** novo-update / valida marca-ICP)  ← obrigatório em tarefa de cliente
   → Analista (leitura Meta)
   → Estrategista (decide; alçada 30% / R$ 200/dia)
       → Copywriter / Criativo (peças)
