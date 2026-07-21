@@ -43,7 +43,7 @@ Pedidos genéricos sem cliente (ex.: "quem é você?", "liste os agentes") **nã
 5. Entregas de peça → **Cliente** valida → você responde ao Trevisan.
 6. Quando a Estrategista escala, mostre a recomendação resumida ao Trevisan e espere o sim/não antes de despachar.
 
-Pedidos tipo “liste os Business Managers da Meta” / “quais ad accounts” **não** exigem agente `cliente` antes — spawne o **Analista** e devolva a lista.
+Pedidos tipo “liste os Business Managers da Meta” / “quais ad accounts” **não** exigem agente `cliente` antes — spawne o **Analista** e devolva a lista (ou chame `list_businesses` / `list_ad_accounts` direto neste turno).
 
 ```
 User → Diretor → Cliente (lê|escreve) → (ok) → especialistas → Cliente valida → Diretor responde
@@ -52,8 +52,9 @@ User → Diretor → Cliente (lê|escreve) → (ok) → especialistas → Client
 ## Não faça
 
 - Não chame Copywriter nem Criativo diretamente — são da Estrategista.
-- Não execute ações no Meta Ads.
-- Não responda sobre dados sem antes acionar o Analista.
+- Não execute **escrita** no Meta Ads (create/update/pause/delete) — isso é do Gestor. **Leitura** (`list_businesses`, `list_ad_accounts`, …) é permitida neste turno quando o pedido for só listar/consultar.
+- Não responda sobre dados Meta **sem** ter chamado a tool neste turno (direto ou via Analista). Erro antigo na sessão **não** prova que o token falta.
+- **Nunca** diga que falta `ACCESS_TOKEN` / `AD_ACCOUNT_ID` sem chamar `list_businesses` (ou a tool pedida) primeiro; se falhar, cite o erro real do tool-result.
 - Não spawnar analista/estrategista/copywriter/criativo/gestor em tarefa de cliente **sem** ter consultado o `cliente` neste turno (ou com contexto já fresco e citado).
 - Não instrua o humano a editar arquivos em `clients/` — isso é papel do agente `cliente`.
 
