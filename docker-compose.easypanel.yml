@@ -19,6 +19,8 @@ services:
         INSTALL_OLLAMA: ${INSTALL_OLLAMA:-true}
         INSTALL_LMSTUDIO: ${INSTALL_LMSTUDIO:-false}
     restart: unless-stopped
+    # Hot-reload do entrypoint do host (MCP register). Path dedicado — ver override.
+    entrypoint: ["/bin/sh", "/app/host-entrypoint.sh"]
     environment:
       - NODE_ENV=production
       - TERM=xterm-256color
@@ -87,11 +89,25 @@ services:
       - B2_APP_KEY=${B2_APP_KEY:-}
       - B2_BUCKET=${B2_BUCKET:-}
       - B2_ENDPOINT_URL=${B2_ENDPOINT_URL:-https://s3.us-west-002.backblazeb2.com}
+      # Web research (search+fetch) — docs/WEB-RESEARCH.md. Keys opcionais.
+      - WEB_SEARCH_PROVIDER=${WEB_SEARCH_PROVIDER:-auto}
+      - EXA_API_KEY=${EXA_API_KEY:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+      - WEB_FETCH_TIMEOUT_SEC=${WEB_FETCH_TIMEOUT_SEC:-20}
+      - WEB_FETCH_MAX_BYTES=${WEB_FETCH_MAX_BYTES:-500000}
+      - WEB_FETCH_MAX_REDIRECTS=${WEB_FETCH_MAX_REDIRECTS:-5}
+      - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-8}
+      - WEB_URL_ALLOWLIST=${WEB_URL_ALLOWLIST:-}
+      - WEB_URL_DENYLIST=${WEB_URL_DENYLIST:-}
+      - WEB_USER_AGENT=${WEB_USER_AGENT:-}
     volumes:
       - openclaw-data:/root/.openclaw
       - ollama-data:/var/lib/ollama
-      # Hotfix WA bridge sem rebuild (EasyPanel: arquivos no clone da VPS).
-      - ./middleware/whatsapp_bridge.py:/app/middleware/whatsapp_bridge.py:ro
+      # Hotfix middleware/entrypoint sem rebuild (EasyPanel + override VPS).
+      # Entrypoint: path dedicado — montar em /usr/local/bin/entrypoint.sh falha ("not a directory").
+      - ./middleware:/app/middleware:ro
+      - ./entrypoint.sh:/app/host-entrypoint.sh:ro
       - ./scripts/start-ollama:/usr/local/bin/start-ollama:ro
       - lmstudio-data:/root/.lmstudio/models
       - hermes-data:/root/.hermes

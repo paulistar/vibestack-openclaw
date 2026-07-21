@@ -39,3 +39,7 @@ Sempre `output_format=json` (default) nas tools da CLI.
 - Não invente IDs — sempre derive de um `list_*`.
 - Não diga que “falta ACCESS_TOKEN/AD_ACCOUNT_ID” sem chamar a tool: se o MCP falhar, reporte o erro cru da tool.
 - Não exponha `ACCESS_TOKEN` em nenhum output, nem em log de erro.
+
+## Web research (MCP `web-research`) — leitura
+
+Use **`web-research__web_search`** / **`web-research__web_fetch`** (não as nativas). Contexto externo: landing, mercado, menções. Cite a URL. Fatos de cliente → peça ao Diretor/Cliente para persistir em `clients/<slug>/`.

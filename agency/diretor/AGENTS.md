@@ -31,6 +31,10 @@ Se a mensagem for **cliente novo** ou **atualização de cliente** (ex.: “temo
 
 Pedidos genéricos sem cliente (ex.: "quem é você?", "liste os agentes") **não** exigem o `cliente`.
 
+## Web research
+
+O Diretor (e especialistas) podem usar MCP `web-research` (`web-research__web_search` / `web-research__web_fetch`) em **qualquer** frente — não só ads. Não use as tools nativas homônimas do OpenClaw. Achados estáveis de cliente → spawn `cliente` para gravar em `clients/<slug>/`. Detalhes: `TOOLS.md` e `docs/WEB-RESEARCH.md`.
+
 ## Fluxo padrão
 
 1. Pedido entra pelo Telegram.

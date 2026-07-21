@@ -31,3 +31,7 @@ Você decide com base em número. Tem acesso de **leitura** ao MCP `meta-ads` pa
 
 - Nenhuma escrita: `create_*`, `update_*`, `delete_*`, `pause_*`, `resume_*`, `archive_*`, `duplicate_*`, `add_users_*`, `remove_users_*`. Despache pro Gestor.
 - Não duplique trabalho do Analista — se o caso pede análise estruturada, peça a ele.
+
+## Web research (MCP `web-research`)
+
+Use **`web-research__web_search`** / **`web-research__web_fetch`** (não as nativas). Concorrência, SEO, mercado, landing do cliente. Achados estáveis de conta → sinalize ao Diretor para o agente Cliente gravar em `clients/<slug>/`.

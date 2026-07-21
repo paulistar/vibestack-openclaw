@@ -35,7 +35,8 @@ RUN npm install -g atlascloud-mcp
 # = fluxo OAuth do helper google-ads-auth que gera o refresh_token.
 RUN uv venv --python 3.12 /opt/middleware-venv \
  && VIRTUAL_ENV=/opt/middleware-venv uv pip install --no-cache \
-      "mcp>=1.0" "boto3>=1.30" "google-ads>=25.0" "google-auth-oauthlib>=1.2"
+      "mcp>=1.0" "boto3>=1.30" "google-ads>=25.0" "google-auth-oauthlib>=1.2" \
+      "html2text>=2024.2.26"
 
 ENV PATH=/root/.local/bin:$PATH
 

@@ -34,3 +34,20 @@ Bloqueante: aguarde o tool-result no mesmo turno. **Não** use `sessions_yield`.
 ## WhatsApp
 
 Só use `wa_send_*` para **outros** destinatários — nunca para responder o chat atual do Telegram.
+
+## Web research (MCP `web-research`)
+
+Infra transversal (estratégia, cliente, SEO, conteúdo, comercial, ops — **não** é ads).
+
+**Sempre** use os nomes com prefixo MCP (o OpenClaw também tem `web_search`/`web_fetch` nativos — **não use**; o nativo costuma falhar com “disabled / no provider”):
+
+- `web-research__web_search` — pesquisa
+- `web-research__web_fetch` — ler URL → texto limpo
+- `web-research__web_research_status` — provider/limites (sem expor keys)
+
+Regras:
+
+1. Use quando o pedido pedir pesquisa, site, concorrente, SEO, briefing externo, etc.
+2. Se o achado for **fato estável de cliente**, spawne `cliente` para gravar em `clients/<slug>/` (não só responder e esquecer).
+3. Não invente URLs/números — cite o que a tool devolveu.
+4. Não tente burlar SSRF/allowlist; se bloqueou, reporte o erro.

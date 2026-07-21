@@ -51,3 +51,7 @@ args: {...}
 retorno: {id, status}
 quando: {timestamp}
 ```
+
+## Web research (MCP `web-research`) — read-only
+
+**`web-research__web_search`** / **`web-research__web_fetch`** só para conferir landing/URL/política pública **antes** de executar (não use as nativas). Não substitui ordem da Estrategista/Diretor. Não grave memória de cliente (isso é do agente Cliente).

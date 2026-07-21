@@ -13,9 +13,15 @@ Templates: [`agency/`](../agency/). Tutorial upstream: Passo 13 do README.
 | Contexto de clientes | `clients/<slug>/` → `/root/.openclaw/workspace/clients/` — ver [CLIENTES.md](./CLIENTES.md) |
 | Subagentes | `maxSpawnDepth: 2`, `allowAgents: ["*"]`, `announceTimeoutMs: 300000` |
 | Modelo | Default `apipromax-gpt/<APIPROMAX_DEFAULT_MODEL>`; opcional `apipromax-claude/<APIPROMAX_CLAUDE_MODEL>` (ver [APIPROMAX.md](./APIPROMAX.md), [PLANO-P1.md](./PLANO-P1.md)) |
-| Tools MCP | `tools.profile: coding` → meta-ads, google-ads, whatsapp, etc. |
+| Tools MCP | `tools.profile: coding` → meta-ads, google-ads, whatsapp, **web-research**, etc. |
 | Telegram | **OpenClaw nativo** → bind no **Diretor** (Hermes deixa de fazer poll no mesmo bot) |
 | WhatsApp | Bridge Evolution: `WA_BRIDGE_AGENT=openclaw` + `WA_BRIDGE_OPENCLAW_AGENT=diretor` |
+
+## Web research (transversal)
+
+MCP `web-research`: `web_search` + `web_fetch` (+ status). Serve **qualquer** frente da agência — não é tool de ads. Segurança SSRF + allowlist; memória em `clients/<slug>/` quando for fato de cliente. Guia: [WEB-RESEARCH.md](./WEB-RESEARCH.md).
+
+No Telegram: *"Pesquise o site do cliente X e atualize a memória"* → Diretor usa search/fetch e spawna **Cliente** para gravar.
 
 ## Bootstrap (VPS)
 

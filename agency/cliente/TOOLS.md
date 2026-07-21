@@ -43,3 +43,11 @@ Quando o Diretor pedir criar, atualizar ou registrar fatos de cliente:
 
 - Sem tokens, senhas, API keys nos arquivos.
 - Só contexto de marca / ICP / oferta / IDs públicos de conta (Meta Ad Account, Google Customer ID).
+
+## Web research (MCP `web-research`)
+
+Use **`web-research__web_search`** / **`web-research__web_fetch`** (não as tools nativas `web_search`/`web_fetch` do OpenClaw). Enriquecer contexto: site do cliente, páginas de oferta, menções públicas.
+
+- Achado **confirmado** e estável → **grave** em `PROFILE.md` / `brand.md` / `offers.md` + append em `history.md` (fonte: URL + data).
+- Não grave rumor; marque Ambíguo/TODO se incerto.
+- Nunca copie secrets de páginas; só fatos de marca/negócio.

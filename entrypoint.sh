@@ -136,6 +136,17 @@ EVOLUTION_BASE_URL="${EVOLUTION_BASE_URL:-http://evolution-go:8080}" \
 EVOLUTION_API_KEY="${EVOLUTION_API_KEY:-}" \
 EVOLUTION_INSTANCE_TOKEN="${EVOLUTION_INSTANCE_TOKEN:-}" \
 EVOLUTION_INSTANCE="${EVOLUTION_INSTANCE:-vibestack}" \
+WEB_SEARCH_PROVIDER="${WEB_SEARCH_PROVIDER:-auto}" \
+EXA_API_KEY="${EXA_API_KEY:-}" \
+TAVILY_API_KEY="${TAVILY_API_KEY:-}" \
+BRAVE_SEARCH_API_KEY="${BRAVE_SEARCH_API_KEY:-}" \
+WEB_FETCH_TIMEOUT_SEC="${WEB_FETCH_TIMEOUT_SEC:-20}" \
+WEB_FETCH_MAX_BYTES="${WEB_FETCH_MAX_BYTES:-500000}" \
+WEB_FETCH_MAX_REDIRECTS="${WEB_FETCH_MAX_REDIRECTS:-5}" \
+WEB_SEARCH_MAX_RESULTS="${WEB_SEARCH_MAX_RESULTS:-8}" \
+WEB_URL_ALLOWLIST="${WEB_URL_ALLOWLIST:-}" \
+WEB_URL_DENYLIST="${WEB_URL_DENYLIST:-}" \
+WEB_USER_AGENT="${WEB_USER_AGENT:-}" \
 HERMES_APPROVALS_MODE="${HERMES_APPROVALS_MODE:-off}" \
 /opt/hermes-agent/venv/bin/python - <<'PYEOF'
 import os, sys
@@ -220,6 +231,23 @@ servers["atlascloud"] = {
     "args": [],
     "env": {"ATLASCLOUD_API_KEY": os.environ.get("ATLASCLOUD_API_KEY", "")},
 }
+servers["web-research"] = {
+    "command": PY,
+    "args": ["/app/middleware/web_research_mcp.py"],
+    "env": {
+        "WEB_SEARCH_PROVIDER": os.environ.get("WEB_SEARCH_PROVIDER", "auto"),
+        "EXA_API_KEY": os.environ.get("EXA_API_KEY", ""),
+        "TAVILY_API_KEY": os.environ.get("TAVILY_API_KEY", ""),
+        "BRAVE_SEARCH_API_KEY": os.environ.get("BRAVE_SEARCH_API_KEY", ""),
+        "WEB_FETCH_TIMEOUT_SEC": os.environ.get("WEB_FETCH_TIMEOUT_SEC", "20"),
+        "WEB_FETCH_MAX_BYTES": os.environ.get("WEB_FETCH_MAX_BYTES", "500000"),
+        "WEB_FETCH_MAX_REDIRECTS": os.environ.get("WEB_FETCH_MAX_REDIRECTS", "5"),
+        "WEB_SEARCH_MAX_RESULTS": os.environ.get("WEB_SEARCH_MAX_RESULTS", "8"),
+        "WEB_URL_ALLOWLIST": os.environ.get("WEB_URL_ALLOWLIST", ""),
+        "WEB_URL_DENYLIST": os.environ.get("WEB_URL_DENYLIST", ""),
+        "WEB_USER_AGENT": os.environ.get("WEB_USER_AGENT", ""),
+    },
+}
 
 # Aprovacao de comandos: num canal headless (api_server/WhatsApp) NAO ha quem
 # responda o prompt de aprovacao -> o agente TRAVA ate o timeout do bridge.
@@ -277,7 +305,7 @@ try:
     cfg_path.chmod(0o600)
 except OSError:
     pass
-print(f"[entrypoint] hermes mcp 'meta-ads', 'google-ads', 'media-editor' e 'whatsapp' registrados em {cfg_path}")
+print(f"[entrypoint] hermes mcp 'meta-ads', 'google-ads', 'media-editor', 'whatsapp' e 'web-research' registrados em {cfg_path}")
 PYEOF
 
 # Sobe o gateway do Hermes em background. A unica plataforma que sobe sem
@@ -533,6 +561,69 @@ print(json.dumps({
 PY
 )"
 register_mcp atlascloud "$ATLAS_MCP_JSON"
+
+# web-research: search + fetch HTTP (infra transversal — nao e' feature de ads).
+# Keys opcionais (Exa/Tavily/Brave); sem key usa DuckDuckGo HTML como fallback.
+# SSRF + allowlist/denylist via env. Docs: docs/WEB-RESEARCH.md
+WEB_MCP_JSON="$(python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "command": "/opt/middleware-venv/bin/python",
+    "args": ["/app/middleware/web_research_mcp.py"],
+    "env": {
+        "WEB_SEARCH_PROVIDER": os.environ.get("WEB_SEARCH_PROVIDER", "auto"),
+        "EXA_API_KEY": os.environ.get("EXA_API_KEY", ""),
+        "TAVILY_API_KEY": os.environ.get("TAVILY_API_KEY", ""),
+        "BRAVE_SEARCH_API_KEY": os.environ.get("BRAVE_SEARCH_API_KEY", ""),
+        "WEB_FETCH_TIMEOUT_SEC": os.environ.get("WEB_FETCH_TIMEOUT_SEC", "20"),
+        "WEB_FETCH_MAX_BYTES": os.environ.get("WEB_FETCH_MAX_BYTES", "500000"),
+        "WEB_FETCH_MAX_REDIRECTS": os.environ.get("WEB_FETCH_MAX_REDIRECTS", "5"),
+        "WEB_SEARCH_MAX_RESULTS": os.environ.get("WEB_SEARCH_MAX_RESULTS", "8"),
+        "WEB_URL_ALLOWLIST": os.environ.get("WEB_URL_ALLOWLIST", ""),
+        "WEB_URL_DENYLIST": os.environ.get("WEB_URL_DENYLIST", ""),
+        "WEB_USER_AGENT": os.environ.get("WEB_USER_AGENT", ""),
+    },
+}, ensure_ascii=False))
+PY
+)"
+register_mcp web-research "$WEB_MCP_JSON"
+# Confirma que o server entrou no openclaw.json (nao precisa de key pra subir).
+# Nega tools nativas web_* do OpenClaw — a agencia usa MCP web-research__* (SSRF + DDG).
+python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path("/root/.openclaw/openclaw.json")
+if not p.exists():
+    raise SystemExit(0)
+try:
+    d = json.loads(p.read_text())
+    srv = (((d.get("mcp") or {}).get("servers") or {}).get("web-research") or {})
+    args = srv.get("args") or []
+    if "/app/middleware/web_research_mcp.py" in args:
+        print("[entrypoint] web-research mcp ok (script no openclaw.json)")
+    else:
+        print("[entrypoint] AVISO: web-research ausente ou args inesperados no openclaw.json")
+    tools = d.setdefault("tools", {})
+    if not isinstance(tools, dict):
+        tools = {}
+        d["tools"] = tools
+    deny = tools.get("deny")
+    if not isinstance(deny, list):
+        deny = []
+    changed = False
+    for name in ("web_search", "web_fetch"):
+        if name not in deny:
+            deny.append(name)
+            changed = True
+    if changed or tools.get("deny") != deny:
+        tools["deny"] = deny
+        p.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n")
+        print("[entrypoint] tools.deny inclui web_search/web_fetch nativos (use web-research__*)")
+    else:
+        print("[entrypoint] tools.deny web_search/web_fetch ja configurado")
+except Exception as e:  # noqa: BLE001
+    print(f"[entrypoint] AVISO: nao consegui ler/patch openclaw.json pos web-research ({e})")
+PY
 
 # Acrescente novos MCP servers aqui no mesmo padrao (JSON via python3 json.dumps):
 # register_mcp outro-server "$(python3 - <<'PY'
