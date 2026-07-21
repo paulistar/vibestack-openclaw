@@ -104,8 +104,79 @@ def _flags(**kwargs: Any) -> list[str]:
 
 @mcp.tool()
 def list_ad_accounts(output_format: str = "json") -> Any:
-    """Lista todas as ad accounts acessíveis pelo ACCESS_TOKEN."""
+    """Lista todas as ad accounts acessíveis pelo ACCESS_TOKEN.
+
+    Não exige AD_ACCOUNT_ID no env — use esta tool para descobrir act_* e
+    depois passe o id explícito nas demais tools.
+    """
     return _run("adaccount", "list", output_format=output_format)
+
+
+@mcp.tool()
+def list_businesses() -> Any:
+    """Lista Business Managers (BMs) acessíveis pelo ACCESS_TOKEN.
+
+    System Users costumam receber `me/businesses` vazio mesmo com
+    `business_management` granted. Neste caso, deduzimos BMs únicos a partir
+    de `me/adaccounts?fields=business`. Não exige AD_ACCOUNT_ID no env.
+    """
+    direct = _graph("GET", "/me/businesses", params={"fields": "id,name", "limit": "100"})
+    if isinstance(direct, dict) and direct.get("error"):
+        # Continua no fallback — System User / path sem edge businesses.
+        direct_err = direct
+        businesses: list[dict[str, Any]] = []
+    else:
+        direct_err = None
+        businesses = list((direct or {}).get("data") or []) if isinstance(direct, dict) else []
+
+    if businesses:
+        return {
+            "source": "me/businesses",
+            "count": len(businesses),
+            "businesses": [{"id": b.get("id"), "name": b.get("name")} for b in businesses],
+        }
+
+    accounts = _graph(
+        "GET",
+        "/me/adaccounts",
+        params={"fields": "id,name,business{id,name}", "limit": "100"},
+    )
+    if isinstance(accounts, dict) and accounts.get("error"):
+        return {
+            "error": "falha ao listar businesses",
+            "me_businesses": direct_err or {"data": []},
+            "adaccounts": accounts,
+            "hint": "Confirme ACCESS_TOKEN no MCP env (openclaw.json) e permissao business_management.",
+        }
+
+    by_id: dict[str, dict[str, Any]] = {}
+    linked_accounts: list[dict[str, Any]] = []
+    for acc in (accounts or {}).get("data") or []:
+        biz = acc.get("business") or {}
+        bid = biz.get("id")
+        linked_accounts.append(
+            {
+                "ad_account_id": acc.get("id"),
+                "ad_account_name": acc.get("name"),
+                "business_id": bid,
+                "business_name": biz.get("name"),
+            }
+        )
+        if bid and bid not in by_id:
+            by_id[bid] = {"id": bid, "name": biz.get("name")}
+
+    return {
+        "source": "me/adaccounts.business",
+        "count": len(by_id),
+        "businesses": list(by_id.values()),
+        "ad_accounts": linked_accounts,
+        "note": (
+            "me/businesses veio vazio (comum em System User); "
+            "BMs deduzidos das ad accounts acessíveis."
+            if not businesses
+            else None
+        ),
+    }
 
 
 @mcp.tool()

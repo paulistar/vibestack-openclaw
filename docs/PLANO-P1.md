@@ -20,9 +20,19 @@ Deploy: `docker-compose.easypanel.yml` + `docker-compose.override.yml` — **nun
 | 1 | **P1.4** Limpar/desativar Telegram no Hermes; só OpenClaw Diretor no TG | [x] |
 | 2 | **P1.3** Provider Claude (`apipromax-claude`) no OpenClaw | [x] código / deploy |
 | 3 | **P1.2** Seeds `mart-studios` / `difrare` com **dados reais** + sync volume | [x] **feito** (não opcional) |
-| 4 | **P1.1** Keys Meta / Google / B2 (MCPs) | [x] docs+example / [!] **AGUARDANDO KEYS** |
+| 4 | **P1.1** Keys Meta / Google / B2 (MCPs) | [x] Meta token (System User); `META_AD_ACCOUNT_ID` limpo — usar `list_ad_accounts` / `act_` por cliente / [!] Google+B2 pendentes |
 
 ---
+
+### Nota Meta (2026-07-21)
+- Manter `META_ACCESS_TOKEN` do System User **renato**.
+- **Não** setar `META_AD_ACCOUNT_ID` com o ID do system user (`61590349740654` ≠ ad account).
+- Contas: descobrir via Graph `me/adaccounts` / tool `list_ad_accounts` e usar `act_<id>` por cliente nas tasks.
+
+### Fix Meta BM no Telegram (2026-07-21, noite)
+- **Causa:** `mcp.servers.meta-ads.env.ACCESS_TOKEN` no volume `openclaw.json` ficou `""` (registro via JSON interpolado em shell / timeout), enquanto o env do container tinha o token — MCP child sem auth; agente inventava “falta ACCESS_TOKEN/AD_ACCOUNT_ID”.
+- **Fix:** entrypoint registra MCP com `python json.dumps` + verify `len`; tool `list_businesses` (fallback `me/adaccounts.business` p/ System User); prompts Analista/Diretor.
+- Smoke: token len=199, `list_businesses` → 8 BMs. Evolution **não** reiniciado.
 
 ## P1.4 — Telegram só no OpenClaw Diretor
 
@@ -88,18 +98,18 @@ Telegram “Mais info …” continua válido para **completar gaps**, não para
 - [x] Entrypoint registra MCPs e avisa se keys vazias
 - [x] Docs de onde colar secrets
 
-### VPS / secrets — status 2026-07-20
+### VPS / secrets — status 2026-07-21
 
 | Var | Local | VPS | Status |
 |-----|-------|-----|--------|
-| `META_ACCESS_TOKEN` | EMPTY | EMPTY | [!] **AGUARDANDO KEYS** |
-| `META_AD_ACCOUNT_ID` | EMPTY | EMPTY | [!] **AGUARDANDO KEYS** |
+| `META_ACCESS_TOKEN` | SET (EAAR…DZD) | SET | [x] **FEITO** (System User, Business Suite) |
+| `META_AD_ACCOUNT_ID` | EMPTY | EMPTY | [x] **limpo** — valor antigo era system user ID, não ad account; usar `list_ad_accounts` / `act_` por cliente |
 | `GOOGLE_ADS_*` (dev/client/secret/refresh/customer) | EMPTY | EMPTY | [!] **AGUARDANDO KEYS** |
 | `B2_KEY_ID` / `B2_APP_KEY` / `B2_BUCKET` | EMPTY | EMPTY | [!] **AGUARDANDO KEYS** |
 
-> Etapa **parada** até o usuário fornecer as keys. Não inventar tokens.
+> **Meta:** `META_ACCESS_TOKEN` (System User **renato**) em secrets local + VPS. `META_AD_ACCOUNT_ID` **vazio** de propósito (`61590349740654` era ID do system user ≠ `act_`). Agente usa `list_ad_accounts` e `act_` por cliente. Recreate só `openclaw-vibestack-wa` (2026-07-21) — Evolution não tocado. Google Ads + B2 ainda pendentes.
 
-### Quando as keys chegarem
+### Quando Google / B2 chegarem
 1. Colar em VPS `.env` + `~/.vibestack-openclaw-easypanel.env` (`chmod 600`)
 2. Recreate **só** `openclaw-vibestack` (easypanel+override) — **não** Evolution
 3. Validar `openclaw mcp list` + smoke

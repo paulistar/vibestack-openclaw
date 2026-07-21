@@ -363,12 +363,18 @@ echo "[entrypoint] socat bridge 0.0.0.0:$HERMES_WEB_PUBLIC_PORT -> 127.0.0.1:$HE
 # Idempotente — pode rodar a cada boot. Se openclaw.json nao existir, o
 # wizard de configuracao do openclaw precisa rodar antes (uma vez por VPS).
 # Roda DEPOIS do Hermes para nao atrasar Telegram sob CPU saturada.
+#
+# Critico: montar o JSON via Python (json.dumps), NUNCA por interpolacao shell.
+# Tokens longos / caracteres especiais quebram o JSON embutido em aspas e o
+# `openclaw mcp set` pode gravar ACCESS_TOKEN="" mesmo com env do container OK.
+# Volume openclaw-data sobrevive a recreate — um registro vazio antigo fica
+# "preso" se o set falhar/timeout sem sobrescrever.
 register_mcp() {
   name="$1"
   json="$2"
   # timeout: sob CPU saturada (ex.: Ollama CPU) o `openclaw mcp set` pode travar
   # e impedir o gateway OpenClaw de subir. Prefira falhar o MCP a bloquear o boot.
-  if timeout 45 openclaw mcp set "$name" "$json" >/dev/null 2>&1; then
+  if timeout 90 openclaw mcp set "$name" "$json" >/dev/null 2>&1; then
     echo "[entrypoint] mcp '$name' registrado"
   else
     echo "[entrypoint] AVISO: falha/timeout ao registrar mcp '$name' (openclaw.json ausente ou host sobrecarregado)"
@@ -383,12 +389,47 @@ if [ -z "${ACCESS_TOKEN:-}" ]; then
 fi
 
 # CLI exige 'act_' no AD_ACCOUNT_ID (ex: act_123456). Adiciona se faltar.
+# AD_ACCOUNT_ID vazio e' OK (list_ad_accounts / list_businesses nao dependem dele).
 case "${AD_ACCOUNT_ID:-}" in
   ""|act_*) ;;
   *) AD_ACCOUNT_ID="act_${AD_ACCOUNT_ID}" ;;
 esac
 
-register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/meta_ads_cli_mcp.py\"],\"env\":{\"ACCESS_TOKEN\":\"${ACCESS_TOKEN:-}\",\"AD_ACCOUNT_ID\":\"${AD_ACCOUNT_ID:-}\",\"BUSINESS_ID\":\"${BUSINESS_ID:-}\"}}"
+META_MCP_JSON="$(ACCESS_TOKEN="${ACCESS_TOKEN:-}" AD_ACCOUNT_ID="${AD_ACCOUNT_ID:-}" BUSINESS_ID="${BUSINESS_ID:-}" python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "command": "/opt/middleware-venv/bin/python",
+    "args": ["/app/middleware/meta_ads_cli_mcp.py"],
+    "env": {
+        "ACCESS_TOKEN": os.environ.get("ACCESS_TOKEN", ""),
+        "AD_ACCOUNT_ID": os.environ.get("AD_ACCOUNT_ID", ""),
+        "BUSINESS_ID": os.environ.get("BUSINESS_ID", ""),
+    },
+}, ensure_ascii=False))
+PY
+)"
+register_mcp meta-ads "$META_MCP_JSON"
+# Verifica se o token chegou no openclaw.json (volume pode ter ficado com stub vazio).
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+p = Path("/root/.openclaw/openclaw.json")
+want = len(os.environ.get("ACCESS_TOKEN", "") or "")
+if not p.exists():
+    raise SystemExit(0)
+try:
+    d = json.loads(p.read_text())
+    got = len((((d.get("mcp") or {}).get("servers") or {}).get("meta-ads") or {}).get("env", {}).get("ACCESS_TOKEN") or "")
+except Exception as e:  # noqa: BLE001
+    print(f"[entrypoint] AVISO: nao consegui ler openclaw.json pos meta-ads ({e})")
+    raise SystemExit(0)
+if want and got != want:
+    print(f"[entrypoint] AVISO: meta-ads ACCESS_TOKEN no openclaw.json len={got} (container len={want}) — MCP child sem auth")
+elif want:
+    print(f"[entrypoint] meta-ads ACCESS_TOKEN ok (len={got})")
+elif not want:
+    print("[entrypoint] meta-ads ACCESS_TOKEN ausente no container")
+PY
 
 # Google Ads: MCP sobre o SDK oficial (google-ads). Auth OAuth2 lida pelo
 # load_from_env() -> repassamos as GOOGLE_ADS_* explicitamente (env reduzido no
@@ -396,14 +437,45 @@ register_mcp meta-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\"
 if [ -z "${GOOGLE_ADS_DEVELOPER_TOKEN:-}" ] || [ -z "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]; then
   echo "[entrypoint] AVISO: GOOGLE_ADS_DEVELOPER_TOKEN/REFRESH_TOKEN vazio — google-ads MCP vai falhar auth. Rode 'googleads auth' e preencha o .env."
 fi
-register_mcp google-ads "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/google_ads_cli_mcp.py\"],\"env\":{\"GOOGLE_ADS_DEVELOPER_TOKEN\":\"${GOOGLE_ADS_DEVELOPER_TOKEN:-}\",\"GOOGLE_ADS_CLIENT_ID\":\"${GOOGLE_ADS_CLIENT_ID:-}\",\"GOOGLE_ADS_CLIENT_SECRET\":\"${GOOGLE_ADS_CLIENT_SECRET:-}\",\"GOOGLE_ADS_REFRESH_TOKEN\":\"${GOOGLE_ADS_REFRESH_TOKEN:-}\",\"GOOGLE_ADS_LOGIN_CUSTOMER_ID\":\"${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}\",\"GOOGLE_ADS_CUSTOMER_ID\":\"${GOOGLE_ADS_CUSTOMER_ID:-}\",\"GOOGLE_ADS_USE_PROTO_PLUS\":\"True\"}}"
+GOOGLE_MCP_JSON="$(python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "command": "/opt/middleware-venv/bin/python",
+    "args": ["/app/middleware/google_ads_cli_mcp.py"],
+    "env": {
+        "GOOGLE_ADS_DEVELOPER_TOKEN": os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
+        "GOOGLE_ADS_CLIENT_ID": os.environ.get("GOOGLE_ADS_CLIENT_ID", ""),
+        "GOOGLE_ADS_CLIENT_SECRET": os.environ.get("GOOGLE_ADS_CLIENT_SECRET", ""),
+        "GOOGLE_ADS_REFRESH_TOKEN": os.environ.get("GOOGLE_ADS_REFRESH_TOKEN", ""),
+        "GOOGLE_ADS_LOGIN_CUSTOMER_ID": os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", ""),
+        "GOOGLE_ADS_CUSTOMER_ID": os.environ.get("GOOGLE_ADS_CUSTOMER_ID", ""),
+        "GOOGLE_ADS_USE_PROTO_PLUS": "True",
+    },
+}, ensure_ascii=False))
+PY
+)"
+register_mcp google-ads "$GOOGLE_MCP_JSON"
 
 # media-editor: ffmpeg envelopado em tools + Backblaze B2 (S3-compatible) como
 # storage canonico de seeds e derivacoes. Consumido pelo agente Criativo.
 if [ -z "${B2_BUCKET:-}" ] || [ -z "${B2_KEY_ID:-}" ] || [ -z "${B2_APP_KEY:-}" ]; then
   echo "[entrypoint] AVISO: B2_BUCKET/B2_KEY_ID/B2_APP_KEY vazios — media-editor MCP vai recusar operacoes. Configure no .env."
 fi
-register_mcp media-editor "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/media_editor_mcp.py\"],\"env\":{\"B2_KEY_ID\":\"${B2_KEY_ID:-}\",\"B2_APP_KEY\":\"${B2_APP_KEY:-}\",\"B2_BUCKET\":\"${B2_BUCKET:-}\",\"B2_ENDPOINT_URL\":\"${B2_ENDPOINT_URL:-}\"}}"
+MEDIA_MCP_JSON="$(python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "command": "/opt/middleware-venv/bin/python",
+    "args": ["/app/middleware/media_editor_mcp.py"],
+    "env": {
+        "B2_KEY_ID": os.environ.get("B2_KEY_ID", ""),
+        "B2_APP_KEY": os.environ.get("B2_APP_KEY", ""),
+        "B2_BUCKET": os.environ.get("B2_BUCKET", ""),
+        "B2_ENDPOINT_URL": os.environ.get("B2_ENDPOINT_URL", ""),
+    },
+}, ensure_ascii=False))
+PY
+)"
+register_mcp media-editor "$MEDIA_MCP_JSON"
 
 # whatsapp: envia mensagens via Evolution Go (whatsmeow), que roda como servico
 # separado no compose. O middleware alcanca a API em http://evolution-go:8080
@@ -412,14 +484,37 @@ register_mcp media-editor "{\"command\":\"/opt/middleware-venv/bin/python\",\"ar
 if [ -z "${EVOLUTION_API_KEY:-}" ]; then
   echo "[entrypoint] AVISO: EVOLUTION_API_KEY vazio — whatsapp MCP vai falhar. Configure no .env."
 fi
-register_mcp whatsapp "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/whatsapp_evolution_mcp.py\"],\"env\":{\"EVOLUTION_BASE_URL\":\"${EVOLUTION_BASE_URL:-http://evolution-go:8080}\",\"EVOLUTION_API_KEY\":\"${EVOLUTION_API_KEY:-}\",\"EVOLUTION_INSTANCE_TOKEN\":\"${EVOLUTION_INSTANCE_TOKEN:-}\",\"EVOLUTION_INSTANCE\":\"${EVOLUTION_INSTANCE:-vibestack}\"}}"
+WA_MCP_JSON="$(python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "command": "/opt/middleware-venv/bin/python",
+    "args": ["/app/middleware/whatsapp_evolution_mcp.py"],
+    "env": {
+        "EVOLUTION_BASE_URL": os.environ.get("EVOLUTION_BASE_URL", "http://evolution-go:8080"),
+        "EVOLUTION_API_KEY": os.environ.get("EVOLUTION_API_KEY", ""),
+        "EVOLUTION_INSTANCE_TOKEN": os.environ.get("EVOLUTION_INSTANCE_TOKEN", ""),
+        "EVOLUTION_INSTANCE": os.environ.get("EVOLUTION_INSTANCE", "vibestack"),
+    },
+}, ensure_ascii=False))
+PY
+)"
+register_mcp whatsapp "$WA_MCP_JSON"
 
 # higgsfield: envelopa o CLI 'higgsfield' (geracao de imagem/video, soul-id) como
 # tools tipados. O CLI le o token de ~/.higgsfield -> passamos HOME=/root explicito
 # porque o openclaw spawna o MCP child com env reduzido. Auth: o aluno roda uma vez
 # `docker exec -it <cont> higgsfield auth login` (OAuth no navegador); o token fica
 # no volume /root/.higgsfield e sobrevive a restart/rebuild.
-register_mcp higgsfield "{\"command\":\"/opt/middleware-venv/bin/python\",\"args\":[\"/app/middleware/higgsfield_cli_mcp.py\"],\"env\":{\"HOME\":\"/root\"}}"
+HIGGS_MCP_JSON="$(python3 - <<'PY'
+import json
+print(json.dumps({
+    "command": "/opt/middleware-venv/bin/python",
+    "args": ["/app/middleware/higgsfield_cli_mcp.py"],
+    "env": {"HOME": "/root"},
+}, ensure_ascii=False))
+PY
+)"
+register_mcp higgsfield "$HIGGS_MCP_JSON"
 
 # atlascloud: MCP server OFICIAL da AtlasCloud (hub de 300+ modelos img/video/LLM).
 # Instalado global na imagem (bin /usr/local/bin/atlascloud-mcp). Auth so' por env
@@ -428,9 +523,21 @@ register_mcp higgsfield "{\"command\":\"/opt/middleware-venv/bin/python\",\"args
 if [ -z "${ATLASCLOUD_API_KEY:-}" ]; then
   echo "[entrypoint] AVISO: ATLASCLOUD_API_KEY vazio — atlascloud MCP vai falhar auth. Configure no .env."
 fi
-register_mcp atlascloud "{\"command\":\"/usr/local/bin/atlascloud-mcp\",\"args\":[],\"env\":{\"ATLASCLOUD_API_KEY\":\"${ATLASCLOUD_API_KEY:-}\"}}"
+ATLAS_MCP_JSON="$(python3 - <<'PY'
+import json, os
+print(json.dumps({
+    "command": "/usr/local/bin/atlascloud-mcp",
+    "args": [],
+    "env": {"ATLASCLOUD_API_KEY": os.environ.get("ATLASCLOUD_API_KEY", "")},
+}, ensure_ascii=False))
+PY
+)"
+register_mcp atlascloud "$ATLAS_MCP_JSON"
 
-# Acrescente novos MCP servers aqui no mesmo padrao:
-# register_mcp outro-server '{"command":"...","args":[...]}'
+# Acrescente novos MCP servers aqui no mesmo padrao (JSON via python3 json.dumps):
+# register_mcp outro-server "$(python3 - <<'PY'
+# import json; print(json.dumps({...}))
+# PY
+# )"
 
 exec "$@"

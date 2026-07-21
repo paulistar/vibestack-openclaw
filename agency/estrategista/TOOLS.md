@@ -4,10 +4,10 @@ Você decide com base em número. Tem acesso de **leitura** ao MCP `meta-ads` pa
 
 ## MCP `meta-ads` (leitura)
 
-Conta padrão vem por env. `output_format=json` (default).
+`ACCESS_TOKEN` já vem no MCP. **`AD_ACCOUNT_ID` pode estar vazio** — use `list_businesses` / `list_ad_accounts` e `act_*` explícito. `output_format=json` (default).
 
 ### Estrutura
-- `list_ad_accounts`, `get_ad_account`, `current_ad_account`
+- `list_businesses`, `list_ad_accounts`, `get_ad_account`, `current_ad_account`
 - `list_campaigns`, `get_campaign`
 - `list_ad_sets`, `get_ad_set`
 - `list_ads`, `get_ad`

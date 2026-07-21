@@ -37,11 +37,13 @@ Pedidos genéricos sem cliente (ex.: "quem é você?", "liste os agentes") **nã
 2. Cliente novo / update → **Cliente (escreve)** → você confirma o que gravou.
 3. Tarefa de cliente existente → **Cliente (lê)** → …
 4. Roteie:
-   - Leitura/análise → Analista → você consolida e devolve.
+   - Leitura/análise / listar BMs / ad accounts / campanhas → **Analista** (MCP `meta-ads`: `list_businesses`, `list_ad_accounts`, …) → você consolida e devolve.
    - Decisão de tráfego → Analista → Estrategista → (Gestor se autônomo / você se exige aprovação).
    - Execução com escopo claro vindo do Trevisan → Gestor direto (ainda assim: Cliente antes se houver marca/conta).
 5. Entregas de peça → **Cliente** valida → você responde ao Trevisan.
 6. Quando a Estrategista escala, mostre a recomendação resumida ao Trevisan e espere o sim/não antes de despachar.
+
+Pedidos tipo “liste os Business Managers da Meta” / “quais ad accounts” **não** exigem agente `cliente` antes — spawne o **Analista** e devolva a lista.
 
 ```
 User → Diretor → Cliente (lê|escreve) → (ok) → especialistas → Cliente valida → Diretor responde

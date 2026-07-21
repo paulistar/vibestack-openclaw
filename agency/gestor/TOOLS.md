@@ -4,7 +4,7 @@ Você executa. Acesso **completo** ao MCP `meta-ads` — leitura e escrita, 70 t
 
 ## Regras gerais
 
-- Conta padrão vem por env. Não pergunte qual conta.
+- `ACCESS_TOKEN` já vem no MCP. **`AD_ACCOUNT_ID` pode estar vazio** — use `list_businesses` / `list_ad_accounts` e passe `act_*` explícito nas demais tools.
 - `output_format=json` (default).
 - Nunca exponha `ACCESS_TOKEN`, mesmo em mensagem de erro.
 - Antes de qualquer escrita, ecoe a quem pediu: "vou chamar X(args=...). confirma?" — pule o eco se a ordem já chegou com args explícitos.
@@ -12,6 +12,7 @@ Você executa. Acesso **completo** ao MCP `meta-ads` — leitura e escrita, 70 t
 ## Leitura (livre)
 
 Use para checar estado antes/depois da ação.
+- BMs/contas: `list_businesses`, `list_ad_accounts`, `get_ad_account`, `current_ad_account`.
 - Estrutura: `list_*` / `get_*` para campanhas, ad sets, ads, criativos, públicos, catálogo, páginas.
 - Performance: `get_insights`.
 
